@@ -1,0 +1,142 @@
+:root {
+  --grund: #0f1219;
+  --flaeche: #171c26;
+  --flaeche-2: #1f2633;
+  --linie: #2c3546;
+  --text: #e4e9f2;
+  --leise: #8e9ab0;
+  --akzent: #ff3d8b;
+  --akzent-text: #16070e;
+  --info: #37d6c8;
+  --warn: #f5b942;
+  --schaden: #ff5f57;
+  --erfolg: #37d6c8;
+  --radius: 6px;
+  color-scheme: dark;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+*, *::before, *::after { box-sizing: inherit; }
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+body {
+  margin: 0; background: var(--grund); color: var(--text);
+  font: 400 1rem/1.5 "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+}
+h1, h2, h3, .marke { font-family: "Chakra Petch", "Segoe UI", system-ui, sans-serif; font-weight: 600; line-height: 1.2; }
+h1 { font-size: 1.8rem; margin: 0 0 .5rem; }
+h2 { font-size: 1.15rem; margin: 0 0 .6rem; }
+h3 { font-size: 1rem; margin: 1rem 0 .4rem; color: var(--leise); text-transform: uppercase; letter-spacing: .06em; }
+p { margin: .4rem 0; }
+.leise { color: var(--leise); }
+.klein { font-size: .88rem; }
+main { max-width: 52rem; margin: 0 auto; padding: 1rem; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button {
+  background: var(--akzent); color: var(--akzent-text); font-weight: 600;
+  border: 0; border-radius: var(--radius); padding: .55rem 1rem; cursor: pointer; min-height: 2.5rem;
+}
+button.zweit { background: var(--flaeche-2); color: var(--text); border: 1px solid var(--linie); }
+button.gefahr { background: transparent; color: var(--schaden); border: 1px solid var(--schaden); }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+select, input[type="text"], input[type="number"], input[type="password"], textarea {
+  background: var(--grund); border: 1px solid var(--linie); border-radius: var(--radius); padding: .5rem .6rem; min-height: 2.5rem; width: 100%;
+}
+textarea { min-height: 6rem; resize: vertical; }
+label { display: block; font-size: .9rem; color: var(--leise); margin-bottom: .25rem; }
+.feld { margin-bottom: .75rem; }
+.zeile { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.zeile > * { flex: 1 1 10rem; }
+.zeile > button { flex: 0 0 auto; }
+.karte { background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; }
+.check { display: flex; gap: .5rem; align-items: center; color: var(--text); font-size: .95rem; }
+.check input { width: 1.2rem; height: 1.2rem; accent-color: var(--akzent); }
+
+/* Kopfleiste */
+.kopf {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: color-mix(in srgb, var(--grund) 92%, transparent); backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--linie);
+}
+.kopf-innen { max-width: 52rem; margin: 0 auto; padding: .5rem 1rem; display: grid; gap: .25rem; }
+.kopf-oben { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.kopf .marke { font-size: 1.2rem; }
+.amzug { font-size: .95rem; color: var(--leise); }
+.amzug.du { color: var(--akzent); font-weight: 600; }
+.werte { display: flex; gap: .35rem .9rem; flex-wrap: wrap; font-size: .85rem; color: var(--leise); align-items: center; }
+.werte > span { white-space: nowrap; }
+.punkte { display: inline-flex; gap: 3px; vertical-align: middle; }
+.punkte i { width: .6rem; height: .6rem; border-radius: 50%; border: 1px solid var(--akzent); display: inline-block; }
+.punkte i.voll { background: var(--akzent); }
+.verbindung { width: .6rem; height: .6rem; border-radius: 50%; display: inline-block; background: var(--schaden); }
+.verbindung.an { background: var(--info); }
+
+/* Monitore */
+.monitor { display: inline-flex; flex-wrap: nowrap; gap: 1px; vertical-align: middle; }
+.monitor .reihe { display: inline-flex; gap: 1px; margin-right: 3px; }
+.monitor i { width: .55rem; height: .55rem; border: 1px solid var(--leise); border-radius: 2px; display: inline-block; }
+.monitor i.voll { background: var(--schaden); border-color: var(--schaden); }
+.monitor.panzer i.voll { background: var(--warn); border-color: var(--warn); }
+
+/* Reiter */
+.reiter { display: flex; gap: .25rem; border-bottom: 1px solid var(--linie); margin: 0 0 1rem; overflow-x: auto; }
+.reiter button {
+  background: transparent; color: var(--leise); border-radius: 0; border-bottom: 3px solid transparent; padding: .6rem .65rem; white-space: nowrap; flex: 0 0 auto;
+}
+.reiter button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--akzent); }
+
+/* Verlauf */
+.verlauf { display: grid; gap: .5rem; margin-bottom: 1rem; }
+.eintrag { background: var(--flaeche); border: 1px solid var(--linie); border-left: 3px solid var(--linie); border-radius: var(--radius); padding: .6rem .8rem; }
+.eintrag.erzaehlung { border-left-color: var(--info); }
+.eintrag.probe { border-left-color: var(--akzent); }
+.eintrag.plotpunkt { border-left-color: var(--warn); }
+.eintrag.system { background: transparent; border: 0; color: var(--leise); font-size: .88rem; text-align: center; padding: .2rem; }
+.eintrag .wer { font-weight: 600; font-family: "Chakra Petch", system-ui, sans-serif; margin-right: .4rem; }
+.eintrag .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wuerfel { display: flex; flex-wrap: wrap; gap: 4px; margin: .35rem 0; }
+.wuerfel b {
+  width: 1.7rem; height: 1.7rem; display: inline-grid; place-items: center; border-radius: 4px;
+  background: var(--flaeche-2); border: 1px solid var(--linie); font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; font-size: .95rem;
+}
+.wuerfel b.erfolg { background: var(--erfolg); color: #062220; border-color: var(--erfolg); }
+.wuerfel b.schicksal { border: 2px dashed var(--warn); }
+.wuerfel b.patzer { background: var(--schaden); color: #1f0504; border-color: var(--schaden); }
+.ergebnis { font-weight: 600; }
+.ergebnis.ja { color: var(--erfolg); }
+.ergebnis.nein { color: var(--schaden); }
+.aufschluesselung { font-size: .88rem; color: var(--leise); }
+
+/* Aktionsbereich */
+.aktionen { position: sticky; bottom: env(safe-area-inset-bottom, 0px); background: var(--grund); padding-top: .5rem; }
+details.karte > summary { cursor: pointer; font-family: "Chakra Petch", system-ui, sans-serif; font-weight: 600; }
+details.karte[open] > summary { margin-bottom: .75rem; }
+.effekte { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .5rem; }
+
+/* Bogen */
+.werteliste { display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: .5rem; }
+.werteliste div { background: var(--flaeche-2); border-radius: var(--radius); padding: .4rem .6rem; }
+.werteliste span { display: block; font-size: .8rem; color: var(--leise); }
+.werteliste strong { font-size: 1.3rem; font-family: "Chakra Petch", system-ui, sans-serif; }
+.tabelle { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--linie); vertical-align: top; }
+th { color: var(--leise); font-weight: 600; }
+
+/* Lobby */
+.spielerliste { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.spielerliste li { display: flex; align-items: center; gap: .6rem; background: var(--flaeche-2); border-radius: var(--radius); padding: .5rem .7rem; }
+.spielerliste li .name { flex: 1; }
+.spielerliste li button { min-height: 2rem; padding: .2rem .6rem; }
+
+.meldung { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); background: var(--schaden); color: #1f0504; font-weight: 600; padding: .6rem 1rem; border-radius: var(--radius); z-index: 20; max-width: calc(100% - 2rem); }
+.meldung[hidden] { display: none; }
+.code-anzeige { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.6rem; letter-spacing: .1em; color: var(--akzent); }
+@media (prefers-reduced-motion: no-preference) {
+  .eintrag { animation: rein .2s ease-out; }
+  @keyframes rein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+}
+
+.karte .monitor i { width: .8rem; height: .8rem; }
+.karte .monitor { flex-wrap: wrap; gap: 2px; }

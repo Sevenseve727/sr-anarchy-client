@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1219">
+<meta name="robots" content="noindex">
+<title>Shadowrun Anarchy – Verwaltung</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Verwaltung</h1>
+  <p class="leise">Diese Seite zeigt nur Verwaltungsdaten, keine Spielinhalte.</p>
+
+  <form class="karte" id="anmeldung">
+    <div class="feld">
+      <label for="secret">Admin-Secret</label>
+      <input id="secret" type="password" autocomplete="current-password">
+    </div>
+    <label class="check feld"><input type="checkbox" id="merken"> Auf diesem Gerät merken</label>
+    <button type="submit">Verbinden</button>
+  </form>
+
+  <div id="inhalt" hidden>
+    <section class="karte">
+      <h2>Spieler</h2>
+      <ul class="spielerliste" id="spieler"></ul>
+      <form class="zeile" id="neu" style="margin-top:.75rem">
+        <input id="neu-name" type="text" placeholder="Name des Spielers" aria-label="Name des Spielers" maxlength="40">
+        <button type="submit">Spieler anlegen</button>
+      </form>
+    </section>
+
+    <section class="karte" id="code-box" hidden>
+      <h2>Neuer Code</h2>
+      <p id="code-fuer" class="leise"></p>
+      <p class="code-anzeige" id="code"></p>
+      <p class="leise klein">Der Code wird nur jetzt angezeigt. Schick ihn dem Spieler direkt; bestehende Anmeldungen dieses Spielers sind ab sofort ungültig.</p>
+      <div class="zeile">
+        <button type="button" id="code-kopieren">Kopieren</button>
+        <button type="button" class="zweit" id="code-schliessen">Schließen</button>
+      </div>
+    </section>
+
+    <section class="karte" id="bogen-box" hidden>
+      <h2 id="bogen-titel">Charakterbogen</h2>
+      <p class="leise klein">JSON einfügen. Pflicht: name, metatyp, attribute (STR GES WIL LOG CHA), edge. Die Vorlage zeigt alle Felder.</p>
+      <textarea id="bogen-json" rows="16" spellcheck="false" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85rem"></textarea>
+      <div class="zeile" style="margin-top:.5rem">
+        <button type="button" id="bogen-speichern">Prüfen und speichern</button>
+        <button type="button" class="zweit" id="bogen-vorlage">Vorlage einfügen</button>
+        <button type="button" class="zweit" id="bogen-schliessen">Schließen</button>
+      </div>
+      <div id="bogen-ergebnis" class="feld" aria-live="polite"></div>
+    </section>
+
+    <section class="karte">
+      <h2>Sitzung und Einstellungen</h2>
+      <p id="sitzung" class="leise"></p>
+      <label class="check feld"><input type="checkbox" id="pp-reset"> Plotpunkte zu jedem Sitzungsbeginn auf 3 zurücksetzen (Auslegung S. 47)</label>
+      <div class="zeile">
+        <button type="button" class="zweit" id="sitzung-beenden">Laufende Sitzung beenden</button>
+        <button type="button" class="gefahr" id="protokoll-leeren">Protokoll löschen</button>
+        <button type="button" class="zweit" id="abmelden">Secret vergessen</button>
+      </div>
+    </section>
+  </div>
+</main>
+<div class="meldung" id="meldung" role="alert" hidden></div>
+<script src="config.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

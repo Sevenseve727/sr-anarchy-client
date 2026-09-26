@@ -87,6 +87,9 @@
         el("button", { class: "zweit", onclick: () => bogen(s) }, "Bogen"),
         el("button", { class: "gefahr", onclick: () => loeschen(s) }, "Entfernen")));
     }
+    $("tisch-status").textContent = daten.tisch.hatCode ? (daten.tisch.online ? "Tischgerät ist verbunden." : "Tisch-Code vorhanden, Gerät nicht verbunden.") : "Noch kein Tisch-Code.";
+    $("tisch-code").textContent = daten.tisch.hatCode ? "Neuen Tisch-Code erzeugen" : "Tisch-Code erzeugen";
+    for (const k of ["ort", "zeit", "run", "szene"]) if (document.activeElement !== $("sz-" + k)) $("sz-" + k).value = daten.szene[k] || "";
     $("sitzung").textContent = daten.sitzung.aktiv ? `Sitzung ${daten.sitzung.nr} läuft.` : `Keine laufende Sitzung (bisher ${daten.sitzung.nr}).`;
     $("pp-reset").checked = !!daten.einstellungen.plotpunkteJeSitzungZuruecksetzen;
   }
@@ -164,6 +167,22 @@
     lade();
   });
 
+  $("tisch-code").addEventListener("click", async () => {
+    if (!confirm("Neuen Tisch-Code erzeugen? Ein bereits angemeldetes Tischgerät wird abgemeldet.")) return;
+    const { ok, daten } = await api("POST", "/admin/tisch/code");
+    if (!ok) return meldung("Tisch-Code konnte nicht erzeugt werden");
+    $("code-fuer").textContent = "Für das Tischgerät:";
+    $("code").textContent = daten.code;
+    $("code-box").hidden = false;
+    $("code-box").scrollIntoView({ behavior: "smooth" });
+    lade();
+  });
+  $("sz-speichern").addEventListener("click", async () => {
+    const body = {};
+    for (const k of ["ort", "zeit", "run", "szene"]) body[k] = $("sz-" + k).value;
+    const { ok } = await api("PUT", "/admin/szene", body);
+    meldung(ok ? "Szenenkopf gespeichert" : "Speichern fehlgeschlagen", ok);
+  });
   $("code-kopieren").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText($("code").textContent); meldung("Kopiert", true); } catch (_) { meldung("Kopieren nicht möglich, bitte abschreiben"); }
   });

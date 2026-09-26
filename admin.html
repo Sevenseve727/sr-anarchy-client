@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="admin.css">
 </head>
 <body>
 <main>
@@ -56,6 +56,27 @@
         <button type="button" class="zweit" id="bogen-schliessen">Schließen</button>
       </div>
       <div id="bogen-ergebnis" class="feld" aria-live="polite"></div>
+    </section>
+
+    <section class="karte">
+      <h2>Tischgerät</h2>
+      <p class="leise klein">Das zentrale Gerät (iPad oder Fernseher) meldet sich mit diesem Code an. Es sieht nur die Tischansicht, nie private Nachrichten.</p>
+      <p id="tisch-status" class="leise"></p>
+      <button type="button" id="tisch-code">Tisch-Code erzeugen</button>
+    </section>
+
+    <section class="karte">
+      <h2>Szenenkopf</h2>
+      <p class="leise klein">Steht oben auf der Tischansicht. Ab Phase 1b-2 setzt ihn die KI-Spielleitung selbst.</p>
+      <div class="zeile feld">
+        <div><label for="sz-ort">Ort</label><input id="sz-ort" type="text" placeholder="z. B. Hamburg · Speicherstadt"></div>
+        <div><label for="sz-zeit">Zeit</label><input id="sz-zeit" type="text" placeholder="z. B. 23:47 · Nieselregen"></div>
+      </div>
+      <div class="zeile feld">
+        <div><label for="sz-run">Run</label><input id="sz-run" type="text" placeholder="z. B. Testlauf"></div>
+        <div><label for="sz-szene">Szene</label><input id="sz-szene" type="text" placeholder="z. B. 1/1"></div>
+      </div>
+      <button type="button" id="sz-speichern">Szenenkopf speichern</button>
     </section>
 
     <section class="karte">

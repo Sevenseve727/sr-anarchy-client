@@ -1,47 +1,49 @@
-// Client für den KI-Spielleiter, Phase 1a (ohne KI).
-// Kein Build-Schritt; alle Texte von Mitspielern werden per textContent eingefügt.
+// Kommlink-Client, Phase 1b-1.
+// Tischgerät: Tischansicht mit Porträt-Sprechtasten. Handy: Sprechen, Bogen, Nachrichten, Lobby.
+// Alle Texte von Mitspielern und der SL werden per textContent eingefügt, nie als HTML.
 (function () {
   "use strict";
 
-  const SERVER = (window.SR_KONFIG && window.SR_KONFIG.server || "").replace(/\/$/, "");
+  const SERVER = ((window.SR_KONFIG && window.SR_KONFIG.server) || "").replace(/\/$/, "");
   const WS_URL = SERVER.replace(/^http/, "ws") + "/api/ws";
-
-  const FERTIGKEITEN = ["Athletik", "Bodenfahrzeuge", "Entfesseln", "Fahrzeugwaffen", "Feuerwaffen", "Heimlichkeit", "Nahkampf",
-    "Projektilwaffen", "Schwere Waffen", "Steuern", "Astralkampf", "Beschwören", "Hexerei", "Survival", "Biotech", "Elektronik",
-    "Hacking", "Mechanik", "Spurenlesen", "Tasken", "Wissensfertigkeiten", "Einschüchtern", "Überreden", "Verhandlung", "Verkleiden"];
-  const ATTRIBUTE = ["STR", "GES", "WIL", "LOG", "CHA"];
-  const SCHWIERIGKEITEN = [[4, "Sehr Einfach (4)"], [6, "Einfach (6)"], [8, "Durchschnittlich (8)"], [10, "Schwierig (10)"], [12, "Sehr Schwierig (12)"]];
-  const ATTRIBUTSPROBEN = {
-    wahrnehmung: { name: "Wahrnehmung (LOG + WIL)", attribute: ["LOG", "WIL"] },
-    verteidigung: { name: "Verteidigung (GES + LOG)", attribute: ["GES", "LOG"] },
-    heben: { name: "Heben (STR × 2)", attribute: ["STR"], verdoppeln: true },
-    fangen: { name: "Fangen (GES × 2)", attribute: ["GES"], verdoppeln: true },
-    erinnern: { name: "Erinnern (LOG × 2)", attribute: ["LOG"], verdoppeln: true },
-    absichten: { name: "Absichten einschätzen (CHA × 2)", attribute: ["CHA"], verdoppeln: true },
-    folter: { name: "Folter widerstehen (WIL + STR)", attribute: ["WIL", "STR"] },
+  const ATTRIBUT_VON = {
+    Astralkampf: "WIL", Beschwören: "WIL", Hexerei: "WIL", Survival: "WIL", Biotech: "LOG", Elektronik: "LOG", Hacking: "LOG",
+    Mechanik: "LOG", Spurenlesen: "LOG", Tasken: "LOG", Wissensfertigkeiten: "LOG", Einschüchtern: "CHA", Überreden: "CHA",
+    Verhandlung: "CHA", Verkleiden: "CHA",
   };
+  const SCHICKSAL = [null, "patzer", "gluecksfall", "neutral"];
+  const SCHICKSAL_TEXT = { null: "–", patzer: "1 · Patzer", gluecksfall: "5–6 · Glück", neutral: "2–4 · nichts" };
+  const MIKRO = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ffe3ef" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10a7 7 0 0 0 14 0"></path><path d="M12 17v5"></path></svg>';
 
-  // ------------------------------------------------------------ Zustand
+  // ------------------------------------------------------------------ Zustand
 
   const S = {
-    token: speicherLies("sr-token"),
+    token: lies("sr-token"),
     zustand: null,
+    zeitVersatz: 0,
     verlauf: [],
-    reiter: "erzaehlung",
+    stream: null, // { id, text } während die SL spricht
     verbunden: false,
     ws: null,
     wiederholung: 0,
-    vorschau: null,
-    entwurf: speicherLies("sr-entwurf") || "",
-    probe: { art: "fertigkeit", fertigkeit: "", spezialisierung: "", attributsprobe: "wahrnehmung", mod: 0, modQuelle: "", slMod: false, gegenArt: "schwierigkeit", gegenWert: 8, edgeVorher: false, lebeGefaehrlich: false, bezeichnung: "" },
-    bogenAnsicht: null,
+    reiter: lies("sr-reiter") || "sprechen",
+    meldeEdge: false,
+    meldeSchicksal: 0,
+    aufnahme: null, // { fuer, zwischen, endgueltig }
+    sperre: false, // Neuzeichnen während Aufnahme unterdrücken
+    ausstehend: false,
+    vorlesen: lies("sr-vorlesen") === "1",
+    gelesen: Number(lies("sr-gelesen") || 0),
+    bilder: {}, // id -> Object-URL oder "laedt"
     reihenfolgeEntwurf: null,
+    lobbyOffen: false,
+    tippen: false,
   };
 
-  function speicherLies(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
-  function speicherSchreib(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (_) {} }
+  function lies(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+  function merke(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, String(v)); } catch (_) {} }
 
-  // ------------------------------------------------------------ DOM-Helfer
+  // ------------------------------------------------------------------ DOM-Helfer
 
   function h(tag, attrs, ...kinder) {
     const el = document.createElement(tag);
@@ -49,11 +51,12 @@
       if (v === undefined || v === null || v === false) continue;
       if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
       else if (k === "class") el.className = v;
+      else if (k === "style") el.setAttribute("style", v);
+      else if (k === "html") el.innerHTML = v; // nur für feste, eigene SVG-Symbole
       else if (k === "value") el.value = v;
-      else if (k === "checked") el.checked = !!v;
       else el.setAttribute(k, v === true ? "" : v);
     }
-    for (const kind of kinder.flat()) {
+    for (const kind of kinder.flat(3)) {
       if (kind === null || kind === undefined || kind === false) continue;
       el.appendChild(typeof kind === "string" || typeof kind === "number" ? document.createTextNode(String(kind)) : kind);
     }
@@ -61,35 +64,32 @@
   }
 
   let meldungTimer = null;
-  function meldung(text) {
+  function meldung(text, gut) {
     const m = document.getElementById("meldung");
     m.textContent = text;
+    m.className = "meldung" + (gut ? " gut" : "");
     m.hidden = false;
     clearTimeout(meldungTimer);
     meldungTimer = setTimeout(() => (m.hidden = true), 4500);
   }
 
-  // ------------------------------------------------------------ Server
+  // ------------------------------------------------------------------ Verbindung
 
   async function login(code) {
     const r = await fetch(SERVER + "/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }),
     });
     const d = await r.json().catch(() => ({}));
     if (r.status === 429) throw new Error("Zu viele Fehlversuche. Bitte in 10 Minuten erneut versuchen.");
     if (!r.ok) throw new Error("Code unbekannt. Bitte prüfen.");
     S.token = d.token;
-    speicherSchreib("sr-token", d.token);
+    merke("sr-token", d.token);
     verbinde();
   }
 
   function abmelden() {
-    S.token = null;
-    S.zustand = null;
-    S.verlauf = [];
-    speicherSchreib("sr-token", null);
+    S.token = null; S.zustand = null; S.verlauf = [];
+    merke("sr-token", null);
     if (S.ws) { S.ws.onclose = null; S.ws.close(); }
     render();
   }
@@ -118,6 +118,7 @@
     switch (n.typ) {
       case "zustand":
         S.zustand = n.zustand;
+        S.zeitVersatz = n.zustand.jetzt - Date.now();
         S.verbunden = true;
         break;
       case "verlauf":
@@ -125,496 +126,608 @@
         break;
       case "ereignis":
         S.verlauf.push(n.ereignis);
-        if (S.verlauf.length > 500) S.verlauf.shift();
+        if (S.verlauf.length > 400) S.verlauf.shift();
+        if (n.ereignis.typ === "sl") {
+          if (S.stream && S.stream.id === n.ereignis.daten.id) S.stream = null;
+          vorlesen(n.ereignis.daten.text);
+        }
+        if (n.ereignis.typ === "hinweis") meldung(n.ereignis.daten.text);
         break;
-      case "probe_vorschau":
-        S.vorschau = n.ergebnis;
-        return renderVorschau();
+      case "sl_stream":
+        S.stream = { id: n.id, text: n.text };
+        if (aktualisiereStream()) return;
+        break;
       case "fehler":
-        if (n.code === "token_ungueltig") { abmelden(); }
+        if (n.code === "token_ungueltig") abmelden();
         meldung(n.meldung || "Fehler");
         return;
     }
     render();
   }
 
-  // ------------------------------------------------------------ Ableitungen
+  // ------------------------------------------------------------------ Ableitungen
 
-  function ich() { return S.zustand && S.zustand.spieler.find((s) => s.id === S.zustand.ich); }
-  function spieler(id) { return S.zustand && S.zustand.spieler.find((s) => s.id === id); }
-  function name(id) {
-    const s = spieler(id);
-    if (!s) return "?";
-    return s.charakter ? `${s.charakter.bogen.name} (${s.name})` : s.name;
-  }
-  /** Name des Urhebers eines Ereignisses; fällt auf den gespeicherten Namen zurück */
-  function nameVon(d) { return spieler(d.von) ? name(d.von) : (d.vonName || "Unbekannt"); }
-
-  function amZugId() {
-    const z = S.zustand && S.zustand.sitzung;
-    return z && z.aktiv ? z.reihenfolge[z.amZug] : null;
-  }
-  function binDran() { return amZugId() === S.zustand.ich; }
-  function darfErzaehlen() { const z = S.zustand.sitzung; return z.aktiv && (binDran() || z.freieRede); }
+  const Z = () => S.zustand;
+  const istTisch = () => Z() && Z().rolle === "tisch";
+  function spieler(id) { return Z() && Z().spieler.find((s) => s.id === id); }
+  function ich() { return spieler(Z().ich); }
+  function scName(s) { return s ? (s.charakter ? s.charakter.bogen.name : s.name) : "?"; }
+  function nameVon(d) { return spieler(d.von) ? scName(spieler(d.von)) : (d.vonName || "Unbekannt"); }
+  function amZugId() { const z = Z().sitzung; return z.aktiv ? z.reihenfolge[z.amZug] : null; }
   function edgeRest(s) { const c = s && s.charakter; return c ? c.bogen.edge - (c.zustand.edgeVerbraucht || 0) : 0; }
+  function letzteSL() {
+    const sl = S.verlauf.filter((e) => e.typ === "sl");
+    return { aktuell: S.stream ? S.stream.text : (sl.length ? sl[sl.length - 1].daten.text : ""), vorher: S.stream ? (sl.length ? sl[sl.length - 1].daten.text : "") : (sl.length > 1 ? sl[sl.length - 2].daten.text : "") };
+  }
+  function privateNachrichten() { return S.verlauf.filter((e) => e.sicht === "privat").slice().reverse(); }
 
-  // ------------------------------------------------------------ Rendering
+  // ------------------------------------------------------------------ Bilder
 
-  function render() {
+  function bildUrl(id) {
+    if (!id) return null;
+    const v = S.bilder[id];
+    if (v && v !== "laedt") return v;
+    if (!v) {
+      S.bilder[id] = "laedt";
+      fetch(SERVER + "/api/bild/" + id, { headers: { Authorization: "Bearer " + S.token } })
+        .then((r) => (r.ok ? r.blob() : Promise.reject()))
+        .then((b) => { S.bilder[id] = URL.createObjectURL(b); render(); })
+        .catch(() => { delete S.bilder[id]; });
+    }
+    return null;
+  }
+
+  /** Porträt aus dem gespeicherten Ausschnitt (Quadrat, Anteile von Breite/Höhe) */
+  function portraet(s, groesse, klasse) {
+    const el = h("div", { class: "portraet " + (klasse || ""), style: `width:${groesse}px;height:${groesse}px;font-size:${Math.round(groesse / 2.6)}px`, "aria-hidden": "true" });
+    const b = s && s.bild;
+    const url = b && bildUrl(b.id);
+    if (url && b.ausschnitt) {
+      const a = b.ausschnitt;
+      const k = groesse / (a.s * a.w);
+      el.style.backgroundImage = `url("${url}")`;
+      el.style.backgroundSize = `${a.w * k}px ${a.h * k}px`;
+      el.style.backgroundPosition = `${-a.x * a.w * k}px ${-a.y * a.h * k}px`;
+    } else {
+      el.textContent = scName(s).slice(0, 1).toUpperCase();
+    }
+    return el;
+  }
+
+  function monitor(max, schaden, art, gross) {
+    const m = h("span", { class: `monitor ${art}${gross ? " gross" : ""}`, role: "img", "aria-label": `${schaden} von ${max}` });
+    let i = 0;
+    for (let r = 0; r < max; r += 3) {
+      const reihe = h("span", { class: "reihe" });
+      for (let k = r; k < Math.min(r + 3, max); k++) reihe.appendChild(h("i", { class: i++ < schaden ? "v" : "" }));
+      m.appendChild(reihe);
+    }
+    return m;
+  }
+
+  function punkte(n) {
+    const p = h("span", { class: "pp", role: "img", "aria-label": `${n} Plotpunkte` });
+    for (let i = 0; i < Math.max(5, n); i++) p.appendChild(h("i", { class: i < n ? "v" : "" }));
+    return p;
+  }
+
+  // ------------------------------------------------------------------ Sprache
+
+  const Erkennung = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  function aufnahmeStart(fuer) {
+    if (!Erkennung) { S.tippen = true; render(); meldung("Spracherkennung wird hier nicht unterstützt. Bitte tippen (auf dem iPad: Safari)."); return; }
+    if (S.aufnahme) return;
+    const r = new Erkennung();
+    r.lang = "de-DE";
+    r.interimResults = true;
+    r.continuous = true;
+    const auf = { fuer, erkennung: r, endgueltig: "", zwischen: "", laeuft: true };
+    r.onresult = (e) => {
+      let zw = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) auf.endgueltig += (auf.endgueltig ? " " : "") + t.trim();
+        else zw += t;
+      }
+      auf.zwischen = zw;
+      const el = document.getElementById("zwischentext");
+      if (el) el.textContent = (auf.endgueltig + " " + auf.zwischen).trim();
+    };
+    r.onerror = (e) => { if (e.error === "not-allowed") meldung("Kein Zugriff aufs Mikrofon. Bitte in den Browser-Einstellungen erlauben."); };
+    r.onend = () => { if (auf.laeuft) { try { r.start(); } catch (_) {} } }; // Safari beendet bei Pausen
+    S.aufnahme = auf;
+    S.sperre = true;
+    try { r.start(); } catch (_) {}
+    zeigeAufnahme(true);
+  }
+
+  function aufnahmeStopp() {
+    const auf = S.aufnahme;
+    if (!auf || auf.stoppt) return; // Taste und Dokument melden das Loslassen beide
+    auf.stoppt = true;
+    auf.laeuft = false;
+    try { auf.erkennung.stop(); } catch (_) {}
+    // Kurz warten, damit das letzte Ergebnis noch eintrifft
+    setTimeout(() => {
+      const text = (auf.endgueltig + " " + auf.zwischen).trim();
+      S.aufnahme = null;
+      S.sperre = false;
+      if (text) sende({ typ: "sprache", text, fuer: istTisch() ? auf.fuer : undefined });
+      render();
+    }, 450);
+    zeigeAufnahme(false);
+  }
+
+  function zeigeAufnahme(an) {
+    const t = document.getElementById("sprechtaste");
+    if (t) t.classList.toggle("aktiv", an);
+    const hw = document.getElementById("sprech-hinweis");
+    if (hw) hw.textContent = an ? "HÖRT ZU …" : "HALTEN ZUM SPRECHEN";
+    const zw = document.getElementById("zwischentext");
+    if (zw && an) zw.textContent = "";
+    if (S.aufnahme && istTisch()) render(true);
+  }
+
+  function vorlesen(text) {
+    if (!istTisch() || !S.vorlesen || !("speechSynthesis" in window)) return;
+    const u = new SpeechSynthesisUtterance(String(text || "").replace(/\[Platzhalter-SL\]\s*/g, ""));
+    u.lang = "de-DE";
+    const stimme = speechSynthesis.getVoices().find((v) => v.lang && v.lang.startsWith("de"));
+    if (stimme) u.voice = stimme;
+    speechSynthesis.speak(u);
+  }
+
+  // ------------------------------------------------------------------ Rendering
+
+  function render(erzwingen) {
+    if (S.sperre && !erzwingen) { S.ausstehend = true; return; }
     const app = document.getElementById("app");
     const aktiv = document.activeElement;
     const fokus = aktiv && aktiv.id;
     const auswahl = aktiv && typeof aktiv.selectionStart === "number" ? [aktiv.selectionStart, aktiv.selectionEnd] : null;
     const scroll = window.scrollY;
-    const nahUnten = window.innerHeight + window.scrollY >= document.body.scrollHeight - 160;
     app.textContent = "";
     if (!SERVER || SERVER.includes("DEIN-NAME")) {
-      app.appendChild(h("main", null, h("div", { class: "karte" }, h("h1", null, "Noch nicht eingerichtet"),
-        h("p", null, "In config.js fehlt die Adresse des Servers."))));
+      app.appendChild(h("div", { class: "login" }, h("div", { class: "glas karte ecken" }, h("h1", null, "Nicht eingerichtet"), h("p", null, "In config.js fehlt die Adresse des Servers."))));
       return;
     }
     if (!S.token) return app.appendChild(renderLogin());
-    if (!S.zustand) {
-      return app.appendChild(h("main", null, h("p", { class: "leise" }, "Verbinde …")));
-    }
-    app.appendChild(renderKopf());
-    const main = h("main", null, renderReiter());
-    if (S.reiter === "erzaehlung") main.appendChild(renderErzaehlung());
-    if (S.reiter === "bogen") main.appendChild(renderBogen());
-    if (S.reiter === "lobby") main.appendChild(renderLobby());
-    app.appendChild(main);
+    if (!Z()) return app.appendChild(h("div", { class: "login" }, h("p", { class: "etikett" }, "Verbinde …")));
+    app.appendChild(istTisch() ? renderTisch() : renderHandy());
     if (fokus) {
       const el = document.getElementById(fokus);
-      if (el) {
-        el.focus({ preventScroll: true });
-        if (auswahl && typeof el.setSelectionRange === "function") { try { el.setSelectionRange(auswahl[0], auswahl[1]); } catch (_) {} }
-      }
+      if (el) { el.focus({ preventScroll: true }); if (auswahl && el.setSelectionRange) { try { el.setSelectionRange(auswahl[0], auswahl[1]); } catch (_) {} } }
     }
     window.scrollTo(0, scroll);
-    // Nur nachscrollen, wenn man ohnehin am Ende des Verlaufs war
-    if (S.reiter === "erzaehlung" && nahUnten && !fokus) {
-      const letzter = document.querySelector(".verlauf .eintrag:last-child");
-      if (letzter) letzter.scrollIntoView({ block: "nearest" });
-    }
   }
 
-  /** details-Elemente behalten ihren Auf-/Zu-Zustand über Neuzeichnungen */
-  function klappbar(schluessel, standardOffen, ...inhalt) {
-    const offen = (speicherLies("sr-offen-" + schluessel) ?? (standardOffen ? "1" : "0")) === "1";
-    return h("details", { class: "karte", open: offen || null, ontoggle: (e) => speicherSchreib("sr-offen-" + schluessel, e.target.open ? "1" : "0") }, ...inhalt);
+  /** Nur den laufenden SL-Text austauschen, ohne alles neu zu zeichnen */
+  function aktualisiereStream() {
+    const el = document.getElementById("sl-text");
+    if (!el || !S.stream) return false;
+    el.textContent = S.stream.text;
+    return true;
   }
 
   function renderLogin() {
-    const eingabe = h("input", { id: "code", type: "text", autocomplete: "one-time-code", autocapitalize: "characters", placeholder: "XXXX-XXXX", "aria-label": "Spielercode" });
-    const knopf = h("button", { type: "submit" }, "Anmelden");
-    const form = h("form", {
-      class: "karte",
-      onsubmit: async (e) => {
-        e.preventDefault();
-        knopf.disabled = true;
-        try { await login(eingabe.value); } catch (err) { meldung(err.message); } finally { knopf.disabled = false; }
-      },
-    },
-    h("h1", null, "Shadowrun Anarchy"),
-    h("p", { class: "leise" }, "Gib deinen Spielercode ein. Du bekommst ihn von Severin."),
-    h("div", { class: "feld" }, eingabe),
-    knopf);
-    return h("main", null, form);
+    const eingabe = h("input", { id: "code", type: "text", autocomplete: "one-time-code", autocapitalize: "characters", placeholder: "XXXX-XXXX", "aria-label": "Code" });
+    const knopf = h("button", { class: "knopf voll", type: "submit" }, "Einloggen");
+    return h("div", { class: "login" }, h("form", {
+      class: "glas karte ecken",
+      onsubmit: async (e) => { e.preventDefault(); knopf.disabled = true; try { await login(eingabe.value); } catch (err) { meldung(err.message); } finally { knopf.disabled = false; } },
+    }, h("p", { class: "etikett" }, "Kommlink · Anmeldung"), h("h1", null, "Shadowrun Anarchy"),
+    h("p", { class: "leise" }, "Gib deinen Spielercode ein, oder den Tisch-Code für das zentrale Gerät."), eingabe, knopf));
   }
 
-  function renderMonitor(max, schaden, klasse) {
-    const m = h("span", { class: "monitor " + (klasse || ""), role: "img", "aria-label": `${schaden} von ${max}` });
-    let rest = max, i = 0;
-    while (rest > 0) {
-      const reihe = h("span", { class: "reihe" });
-      for (let k = 0; k < Math.min(3, rest); k++) reihe.appendChild(h("i", { class: i++ < schaden ? "voll" : "" }));
-      m.appendChild(reihe);
-      rest -= 3;
+  // ---------- Gemeinsame Bausteine
+
+  function probeText(p) {
+    const gegen = p.gegen.art === "schwierigkeit" ? { 4: "Sehr Einfach", 6: "Einfach", 8: "Durchschnittlich", 10: "Schwierig", 12: "Sehr Schwierig" }[p.gegen.wert] + ` (${p.gegen.wert})` : `Gegner-Pool ${p.gegen.wert}`;
+    return { pool: `${p.bezeichnung} = ${p.pool} Würfel`, gegen: `gegen ${gegen} · Regelwerk ${p.seite || "S. 50"}` };
+  }
+
+  function renderMitschriften(nurEigene) {
+    const liste = (Z().mitschriften || []).filter((m) => !nurEigene || m.von === Z().ich || m.durch === Z().ich);
+    return liste.map((m) => {
+      const rest = Math.max(0, m.faellig - (Date.now() + S.zeitVersatz));
+      return h("div", { class: "mitschrift" },
+        h("span", null, h("span", { class: "etikett" }, `Mitschrift · ${scName(spieler(m.von))}`), " ", h("span", { class: "zitat" }, `"${m.text}"`)),
+        h("button", { class: "knopf", onclick: () => sende({ typ: "mitschrift_abbrechen", id: m.id }) }, "Rückgängig"),
+        h("div", { class: "balken" }, h("span", { style: `animation-duration:${rest}ms` })));
+    });
+  }
+
+  // ---------- Tischansicht
+
+  function renderTisch() {
+    const z = Z();
+    const sz = z.sitzung;
+    const sl = letzteSL();
+    const dran = amZugId();
+    const szene = z.szene || {};
+    const kopf = h("header", { class: "tisch-kopf" },
+      h("div", { style: "display:flex;align-items:baseline;gap:16px;flex-wrap:wrap" },
+        h("span", { class: "ort" }, szene.ort || "Kommlink"),
+        szene.zeit ? h("span", { class: "mono leise" }, szene.zeit) : null),
+      h("div", { class: "daten" },
+        szene.run ? h("span", null, `RUN: ${szene.run.toUpperCase()}`) : null,
+        szene.szene ? h("span", null, `SZENE ${szene.szene}`) : null,
+        sz.aktiv ? h("span", null, `RUNDE ${sz.runde}`) : h("span", null, "KEINE SITZUNG"),
+        sz.freieRede ? h("span", { class: "sl" }, "FREIE REDE") : null,
+        h("span", { class: "sl" }, `SL-PLOTPUNKTE ${z.slPlotpunkte}`),
+        h("button", { class: "knopf" + (S.vorlesen ? " cyan" : ""), onclick: () => { S.vorlesen = !S.vorlesen; merke("sr-vorlesen", S.vorlesen ? "1" : "0"); if (!S.vorlesen && "speechSynthesis" in window) speechSynthesis.cancel(); render(); } }, S.vorlesen ? "Vorlesen an" : "Vorlesen aus"),
+        h("button", { class: "knopf", onclick: () => { S.lobbyOffen = !S.lobbyOffen; render(); } }, "Lobby"),
+        h("span", { class: "punkt" + (S.verbunden ? " an" : ""), title: S.verbunden ? "verbunden" : "getrennt" })));
+
+    const haupt = h("main", { class: "tisch-haupt" });
+    if (S.lobbyOffen || !sz.aktiv) {
+      haupt.appendChild(renderLobbyKarte(true));
+    } else {
+      haupt.appendChild(h("section", { class: "glas ecken tisch-sl" },
+        h("p", { class: "etikett", style: "margin-bottom:12px" }, S.stream ? "Spielleitung ▸ live" : "Spielleitung"),
+        h("p", { class: "text", id: "sl-text" }, sl.aktuell || "Die Sitzung läuft. Wer am Zug ist, erzählt."),
+        sl.vorher ? h("p", { class: "vorher" }, sl.vorher) : null));
     }
-    return m;
+    if (z.offeneProbe) {
+      const p = z.offeneProbe;
+      const t = probeText(p);
+      haupt.appendChild(h("section", { class: "probe" },
+        h("div", { class: "seite" }, "PROBE", h("br"), scName(spieler(p.spieler)).toUpperCase()),
+        h("div", { class: "inhalt" }, h("div", { class: "pool" }, t.pool), h("div", { class: "gegen" }, t.gegen + " · würfeln und Erfolge ansagen"))));
+    }
+    renderMitschriften(false).forEach((m) => haupt.appendChild(m));
+
+    const team = h("aside", { class: "tisch-team", "aria-label": "Team" },
+      h("p", { class: "etikett" }, `Team ▸ ${z.spieler.length} Runner · Porträt antippen zum Sprechen`),
+      z.spieler.map((s) => renderRunner(s, dran, sz)));
+
+    return h("div", { class: "tisch" }, kopf, h("div", { class: "tisch-rumpf" }, haupt, team));
   }
 
-  function renderPunkte(n, max) {
-    const p = h("span", { class: "punkte", role: "img", "aria-label": `${n} Plotpunkte` });
-    for (let i = 0; i < Math.max(max, n); i++) p.appendChild(h("i", { class: i < n ? "voll" : "" }));
-    return p;
+  function renderRunner(s, dran, sz) {
+    const c = s.charakter;
+    const passiv = sz.aktiv && !sz.reihenfolge.includes(s.id);
+    const nimmtAuf = S.aufnahme && S.aufnahme.fuer === s.id;
+    const klasse = "runner" + (s.id === dran ? " aktiv" : "") + (passiv ? " passiv" : "") + (nimmtAuf ? " nimmt-auf" : "");
+    const knopf = h("button", {
+      class: klasse,
+      "aria-label": nimmtAuf ? `Aufnahme für ${scName(s)} beenden` : `Für ${scName(s)} sprechen`,
+      disabled: !sz.aktiv || passiv || (S.aufnahme && !nimmtAuf) || null,
+      onclick: () => (nimmtAuf ? aufnahmeStopp() : aufnahmeStart(s.id)),
+    }, portraet(s, 64, s.id === dran ? "aktiv" : ""));
+    const kern = h("div", { class: "kern" },
+      h("div", { style: "display:flex;justify-content:space-between;align-items:baseline;gap:8px" },
+        h("span", { class: "name" }, scName(s)),
+        nimmtAuf ? h("span", { class: "marke rec" }, "HÖRT ZU") : (s.id === dran ? h("span", { class: "marke" }, "AM ZUG") : (passiv ? h("span", { class: "mono leise" }, "IM HINTERGRUND") : null))));
+    if (nimmtAuf) kern.appendChild(h("div", { id: "zwischentext", class: "zwischentext", style: "text-align:left;padding:0" }, ""));
+    if (c) {
+      kern.appendChild(h("div", { class: "werte" },
+        h("span", null, "K"), monitor(c.zustand.monitore.K.max, c.zustand.monitore.K.schaden, "k"),
+        h("span", null, "G"), monitor(c.zustand.monitore.G.max, c.zustand.monitore.G.schaden, "g"),
+        h("span", null, "P"), monitor(c.zustand.panzerung.max, c.zustand.panzerung.schaden, "p")));
+      kern.appendChild(h("div", { class: "zeile" }, h("span", null, "PLOT ", punkte(s.plotpunkte)), h("span", null, `EDGE ${edgeRest(s)}/${c.bogen.edge}`)));
+    } else {
+      kern.appendChild(h("span", { class: "mono leise" }, "Kein Charakterbogen"));
+    }
+    knopf.appendChild(kern);
+    return knopf;
   }
 
-  function renderKopf() {
+  // ---------- Handyansicht
+
+  function renderHandy() {
+    const me = ich();
+    const sz = Z().sitzung;
+    const dran = amZugId();
+    const c = me && me.charakter;
+    let status = "Keine laufende Sitzung";
+    if (sz.aktiv) status = sz.freieRede ? `Runde ${sz.runde} · Freie Rede` : (dran === Z().ich ? `Runde ${sz.runde} · Du bist dran` : `Runde ${sz.runde} · Am Zug: ${scName(spieler(dran))}`);
+
+    const kopf = h("header", { class: "handy-kopf" },
+      portraet(me, 52, "aktiv"),
+      h("div", { class: "wer" }, h("div", { class: "name" }, scName(me)), h("div", { class: "status" + (dran === Z().ich ? " du" : "") }, status)),
+      c ? h("div", { class: "konten" }, h("span", null, "PP ", punkte(me.plotpunkte)), h("span", null, `EDGE ${edgeRest(me)}/${c.bogen.edge}`), h("span", { class: "punkt" + (S.verbunden ? " an" : "") })) : null);
+
+    const monitore = c ? h("div", { class: "handy-monitore" },
+      h("span", null, "K"), monitor(c.zustand.monitore.K.max, c.zustand.monitore.K.schaden, "k"), h("span", null, `${c.zustand.monitore.K.schaden}/${c.zustand.monitore.K.max}`),
+      h("span", null, "G"), monitor(c.zustand.monitore.G.max, c.zustand.monitore.G.schaden, "g"), h("span", null, `${c.zustand.monitore.G.schaden}/${c.zustand.monitore.G.max}`)) : null;
+
+    const rumpf = h("main", { class: "handy-rumpf" });
+    if (S.reiter === "sprechen") renderSprechen(rumpf);
+    if (S.reiter === "bogen") renderBogen(rumpf);
+    if (S.reiter === "nachrichten") renderNachrichten(rumpf);
+    if (S.reiter === "lobby") rumpf.appendChild(renderLobbyKarte(false));
+
+    const neu = privateNachrichten().filter((e) => e.nr > S.gelesen).length;
+    const reiter = [["sprechen", "Sprechen"], ["bogen", "Bogen"], ["nachrichten", "Nachrichten"], ["lobby", "Lobby"]];
+    const nav = h("nav", { class: "handy-nav", role: "tablist" }, reiter.map(([k, t]) => h("button", {
+      role: "tab", "aria-selected": String(S.reiter === k),
+      onclick: () => { S.reiter = k; merke("sr-reiter", k); if (k === "nachrichten") markiereGelesen(); render(); },
+    }, t, k === "nachrichten" && neu ? h("span", { class: "badge" }, neu) : null)));
+
+    return h("div", { class: "handy" }, kopf, monitore, rumpf, nav);
+  }
+
+  function renderSprechen(rumpf) {
+    const z = Z();
+    const sl = letzteSL();
+    rumpf.appendChild(h("section", { class: "glas sl-karte" },
+      h("p", { class: "etikett", style: "margin-bottom:6px" }, S.stream ? "Spielleitung ▸ live" : "Spielleitung"),
+      h("p", { class: "text", id: "sl-text" }, sl.aktuell || (z.sitzung.aktiv ? "Warte auf die Spielleitung …" : "Die Sitzung wird in der Lobby gestartet."))));
+
+    const p = z.offeneProbe;
+    if (p && p.spieler === z.ich) rumpf.appendChild(renderMeineProbe(p));
+    else if (p) {
+      const t = probeText(p);
+      rumpf.appendChild(h("section", { class: "probe", style: "padding:10px 14px" }, h("div", { class: "titel" }, `PROBE FÜR ${scName(spieler(p.spieler)).toUpperCase()}`), h("div", { class: "gegen" }, t.pool)));
+    }
+    renderMitschriften(true).forEach((m) => rumpf.appendChild(m));
+
+    if (!z.sitzung.aktiv) return;
+    rumpf.appendChild(h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
+      h("button", { class: "knopf cyan", disabled: amZugId() !== z.ich || !!z.offeneProbe || null, onclick: () => sende({ typ: "zug_beenden" }) }, "Zug beenden"),
+      h("button", { class: "knopf", onclick: () => zeigePlotpunkte() }, "Plotpunkt einsetzen")));
+
+    // Die Sprechtaste bleibt immer sichtbar über der Reiterleiste
+    const leiste = h("div", { class: "sprechleiste" });
+    if (Erkennung && !S.tippen) {
+      const taste = h("button", {
+        id: "sprechtaste", class: "sprechtaste" + (S.aufnahme ? " aktiv" : ""), "aria-label": "Halten zum Sprechen", html: MIKRO,
+        onpointerdown: (e) => { e.preventDefault(); try { e.target.setPointerCapture(e.pointerId); } catch (_) {} aufnahmeStart(z.ich); },
+        onpointerup: () => aufnahmeStopp(),
+        onpointercancel: () => aufnahmeStopp(),
+        oncontextmenu: (e) => e.preventDefault(),
+      });
+      leiste.append(taste, h("div", { class: "rechts" },
+        h("div", { id: "sprech-hinweis", class: "sprech-hinweis" }, "HALTEN ZUM SPRECHEN"),
+        h("div", { id: "zwischentext", class: "zwischentext leise", style: "font-size:.85rem" }, 'z. B. "Vier Erfolge mit Edge"'),
+        h("button", { class: "knopf", style: "min-height:32px;align-self:flex-start;padding:0 10px;font-size:.8rem", onclick: () => { S.tippen = true; render(); } }, "Stattdessen tippen")));
+    } else {
+      const feld = h("input", { id: "tipp-feld", type: "text", placeholder: "Was tut dein Charakter?", "aria-label": "Text statt Sprache" });
+      leiste.append(h("div", { class: "rechts" },
+        h("form", { class: "tippen", onsubmit: (e) => { e.preventDefault(); if (feld.value.trim()) { sende({ typ: "sprache", text: feld.value.trim() }); feld.value = ""; } } },
+          feld, h("button", { class: "knopf voll", type: "submit" }, "Senden")),
+        Erkennung ? h("button", { class: "knopf", style: "min-height:32px;align-self:flex-start;padding:0 10px;font-size:.8rem", onclick: () => { S.tippen = false; render(); } }, "Zurück zur Sprechtaste") : null));
+    }
+    rumpf.appendChild(leiste);
+  }
+
+  function renderMeineProbe(p) {
+    const t = probeText(p);
+    const melde = (n) => { sende({ typ: "probe_melden", erfolge: n, edge: S.meldeEdge, schicksal: SCHICKSAL[S.meldeSchicksal] }); S.meldeEdge = false; S.meldeSchicksal = 0; };
+    const chips = h("div", { class: "chips" }, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => h("button", { class: "knopf", onclick: () => melde(n) }, n)));
+    const mehr = h("button", { class: "knopf", style: "min-height:36px", onclick: () => { const x = Number.parseInt(prompt("Wie viele Erfolge?") || "", 10); if (Number.isInteger(x) && x >= 0) melde(x); } }, "10 oder mehr");
+    const schalter = h("div", { class: "schalter" },
+      h("button", { class: "knopf" + (S.meldeEdge ? " an" : ""), "aria-pressed": String(S.meldeEdge), onclick: () => { S.meldeEdge = !S.meldeEdge; render(); } }, h("span", null, "Edge eingesetzt"), h("span", null, S.meldeEdge ? "AN" : "AUS")),
+      h("button", { class: "knopf" + (S.meldeSchicksal ? " an" : ""), "aria-pressed": String(!!S.meldeSchicksal), onclick: () => { S.meldeSchicksal = (S.meldeSchicksal + 1) % SCHICKSAL.length; render(); } }, h("span", null, "Schicksalswürfel"), h("span", null, SCHICKSAL_TEXT[SCHICKSAL[S.meldeSchicksal]])));
+    return h("section", { class: "probe" },
+      h("div", { style: "display:flex;justify-content:space-between;align-items:baseline" }, h("span", { class: "titel" }, "PROBE FÜR DICH"), h("span", { class: "mono gegen" }, p.seite || "")),
+      h("div", { class: "pool" }, t.pool),
+      h("div", { class: "gegen" }, t.gegen.replace(/ · Regelwerk.*$/, "") + " · würfle und sag deine Erfolge an"),
+      h("div", { class: "mono gegen", style: "font-size:.75rem" }, "ODER ANTIPPEN:"),
+      schalter, chips, mehr,
+      h("button", { class: "knopf", style: "min-height:36px", onclick: () => sende({ typ: "probe_tool", edge: S.meldeEdge, schicksal: !!S.meldeSchicksal }) }, "Online: das Tool würfeln lassen"));
+  }
+
+  function zeigePlotpunkte() {
+    const z = Z();
+    const effekte = Object.entries(z.effekte || {}).filter(([k]) => k !== "lebe_gefaehrlich" && k !== "kreativ");
+    const ziel = h("select", { "aria-label": "Ziel für Erste Hilfe" }, z.spieler.filter((s) => s.charakter).map((s) => h("option", { value: s.id }, scName(s))));
+    ziel.value = z.ich;
+    const mon = h("select", { "aria-label": "Monitor" }, h("option", { value: "K" }, "Körperlich"), h("option", { value: "G" }, "Geistig"));
+    const notiz = h("input", { type: "text", placeholder: "Was passiert? (optional)", "aria-label": "Notiz" });
+    dialog(h("div", { class: "glas karte ecken dialog" },
+      h("h2", null, `Plotpunkt einsetzen (${ich().plotpunkte})`),
+      h("p", { class: "leise" }, "Kostet 1 Plotpunkt, er geht an die Spielleitung (S. 47 f.). Lebe gefährlich wählst du bei der Probe über den Schicksalswürfel."),
+      notiz,
+      h("div", { style: "display:grid;grid-template-columns:1fr 1fr;gap:8px" }, ziel, mon),
+      h("div", { style: "display:grid;grid-template-columns:1fr 1fr;gap:8px" }, effekte.map(([k, t]) => h("button", {
+        class: "knopf magenta", disabled: ich().plotpunkte < 1 || null,
+        onclick: () => { sende({ typ: "plotpunkt", effekt: k, notiz: notiz.value, ziel: ziel.value, monitor: mon.value }); schliesseDialog(); },
+      }, t))),
+      h("button", { class: "knopf", onclick: schliesseDialog }, "Abbrechen")));
+  }
+
+  // ---------- Bogen
+
+  function renderBogen(rumpf) {
     const me = ich();
     const c = me && me.charakter;
-    const dran = amZugId();
-    const sz = S.zustand.sitzung;
-    let zugText = "Keine laufende Sitzung";
-    if (sz.aktiv) zugText = sz.freieRede ? `Runde ${sz.runde} · Freie Rede` : (dran === S.zustand.ich ? `Runde ${sz.runde} · Du bist dran` : `Runde ${sz.runde} · Am Zug: ${name(dran)}`);
-    return h("header", { class: "kopf" }, h("div", { class: "kopf-innen" },
-      h("div", { class: "kopf-oben" },
-        h("span", { class: "marke" }, c ? c.bogen.name : (me ? me.name : "")),
-        h("span", { class: "amzug" + (dran === S.zustand.ich && !sz.freieRede ? " du" : "") }, zugText)),
-      c ? h("div", { class: "werte" },
-        h("span", null, "Plotpunkte ", renderPunkte(me.plotpunkte, 5)),
-        h("span", null, `Edge ${edgeRest(me)}/${c.bogen.edge}`),
-        h("span", null, "K ", renderMonitor(c.zustand.monitore.K.max, c.zustand.monitore.K.schaden)),
-        h("span", null, "G ", renderMonitor(c.zustand.monitore.G.max, c.zustand.monitore.G.schaden)),
-        h("span", { title: S.verbunden ? "verbunden" : "getrennt" }, h("i", { class: "verbindung" + (S.verbunden ? " an" : "") }))) : null));
-  }
+    const url = me.bild && bildUrl(me.bild.id);
+    rumpf.appendChild(h("figure", { class: "sin" }, url ? h("img", { src: url, alt: `Bild von ${scName(me)}` }) : h("div", { class: "sin-leer" }, "Noch kein Bild. Lade eine SIN-Karte oder ein Porträt hoch.")));
+    rumpf.appendChild(h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
+      h("label", { class: "knopf cyan", style: "display:inline-flex;align-items:center" }, url ? "Bild ändern" : "Bild hochladen",
+        h("input", { type: "file", accept: "image/*", style: "display:none", onchange: (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) bildWaehlen(f); } })),
+      url ? h("button", { class: "knopf", onclick: () => zuschnittDialog(url, me.bild.ausschnitt, null) }, "Porträtausschnitt") : null));
 
-  function renderReiter() {
-    const r = [["erzaehlung", "Erzählung"], ["bogen", "Charakterbogen"], ["lobby", "Lobby"]];
-    return h("nav", { class: "reiter", role: "tablist" }, r.map(([k, t]) =>
-      h("button", { role: "tab", "aria-selected": String(S.reiter === k), onclick: () => { S.reiter = k; render(); } }, t)));
-  }
+    const text = h("textarea", { id: "aussehen", placeholder: "Wie sieht dein Charakter aus? Ab Phase 1b-2 schlägt die KI eine Beschreibung aus dem Bild vor." });
+    text.value = me.aussehen || "";
+    rumpf.appendChild(h("section", { class: "glas karte" },
+      h("p", { class: "etikett" }, "Aussehen · die SL beschreibt dich danach"),
+      text,
+      h("button", { class: "knopf cyan", onclick: () => { sende({ typ: "aussehen", text: text.value }); meldung("Gespeichert", true); } }, "Speichern")));
 
-  // ---------- Erzählung
-
-  function renderErzaehlung() {
-    const box = h("section", null);
-    const liste = h("div", { class: "verlauf", "aria-live": "polite" });
-    const sichtbar = S.verlauf.slice(-150);
-    if (!sichtbar.length) liste.appendChild(h("p", { class: "leise" }, "Noch nichts passiert."));
-    for (const e of sichtbar) liste.appendChild(renderEreignis(e));
-    box.appendChild(liste);
-
-    const sz = S.zustand.sitzung;
-    if (!sz.aktiv) {
-      box.appendChild(h("p", { class: "leise" }, "Die Sitzung wird in der Lobby gestartet."));
-      return box;
+    if (!c) { rumpf.appendChild(h("p", { class: "leerzustand" }, "Noch kein Charakterbogen hinterlegt.")); return; }
+    const b = c.bogen, zs = c.zustand;
+    rumpf.appendChild(h("div", { class: "attribute" },
+      ["STR", "GES", "WIL", "LOG", "CHA"].map((a) => h("div", null, h("span", null, a), h("strong", null, b.attribute[a]))),
+      h("div", null, h("span", null, "EDGE"), h("strong", null, `${edgeRest(me)}/${b.edge}`))));
+    rumpf.appendChild(h("section", { class: "abschnitt" },
+      h("div", { class: "handy-monitore", style: "padding:0;border:0;grid-template-columns:64px minmax(0,1fr) auto" },
+        h("span", null, "KÖRPER"), monitor(zs.monitore.K.max, zs.monitore.K.schaden, "k", true), h("span", null, `${zs.monitore.K.schaden}/${zs.monitore.K.max}`),
+        h("span", null, "GEIST"), monitor(zs.monitore.G.max, zs.monitore.G.schaden, "g", true), h("span", null, `${zs.monitore.G.schaden}/${zs.monitore.G.max}`),
+        h("span", null, "PANZER"), monitor(zs.panzerung.max, zs.panzerung.schaden, "p", true), h("span", null, `${zs.panzerung.max - zs.panzerung.schaden}/${zs.panzerung.max}`))));
+    rumpf.appendChild(h("section", { class: "abschnitt" }, h("p", { class: "etikett" }, "Fertigkeiten · Pool"),
+      h("div", { class: "liste" }, Object.entries(b.fertigkeiten || {}).map(([f, w]) => {
+        const attr = ATTRIBUT_VON[f] || "GES";
+        const spez = (w.spezialisierungen || []).map((x) => `${x.name} +${x.bonus || 2}`).join(", ");
+        return h("div", null, h("span", null, f, " ", h("span", { class: "leise", style: "font-size:.85rem" }, spez)), h("span", { class: "rechts" }, `${w.wert + b.attribute[attr]} (${w.wert}+${attr})`));
+      }))));
+    if ((b.waffen || []).length) {
+      rumpf.appendChild(h("section", { class: "abschnitt" }, h("p", { class: "etikett" }, "Waffen · Schaden · Nah / Mittel / Weit"),
+        h("div", { class: "liste" }, b.waffen.map((w) => {
+          const r = w.reichweiten || {};
+          const f = (x) => (x === null || x === undefined || x === "-" ? "–" : String(x));
+          return h("div", null, h("span", null, w.name), h("span", { class: "rechts" }, `${w.schaden}${w.art} · ${f(r.nah)} / ${f(r.mittel)} / ${f(r.weit)}`));
+        }))));
     }
-    box.appendChild(renderEingabe());
-    box.appendChild(renderProbe());
-    box.appendChild(renderPlotpunkte());
-    return box;
-  }
-
-  function renderEreignis(e) {
-    const d = e.daten || {};
-    switch (e.typ) {
-      case "erzaehlung":
-        return h("div", { class: "eintrag erzaehlung" }, h("span", { class: "wer" }, nameVon(d)), h("span", { class: "text" }, d.text));
-      case "probe":
-        return renderProbenEintrag(e);
-      case "probe_edge":
-        return h("div", { class: "eintrag probe" },
-          h("span", { class: "wer" }, nameVon(d)), "setzt Edge nach dem Wurf ein.",
-          renderWuerfel(d.eigen.wuerfe, false, d.eigen.schicksal),
-          h("div", null, `Neu: ${d.eigen.erfolge} gegen ${d.gegner.erfolge} Erfolge – `, renderErgebnis(d.vergleich)));
-      case "plotpunkt": {
-        const eff = (S.zustand.effekte || {})[d.effekt] || d.effekt;
-        let zusatz = "";
-        if (d.wirkung && d.effekt === "erste_hilfe") zusatz = ` → ${name(d.wirkung.ziel)}: ${d.wirkung.geheilt} Kreis ${d.wirkung.monitor} geheilt`;
-        return h("div", { class: "eintrag plotpunkt" }, h("span", { class: "wer" }, nameVon(d)), `Plotpunkt: ${eff}${zusatz}`,
-          d.notiz ? h("div", { class: "text leise" }, d.notiz) : null);
-      }
-      case "runde": return h("div", { class: "eintrag system" }, `— Runde ${d.runde} —`);
-      case "sitzung_start": return h("div", { class: "eintrag system" }, `Sitzung ${d.nr} beginnt. Reihenfolge: ${d.reihenfolge.join(", ")}`);
-      case "sitzung_ende": return h("div", { class: "eintrag system" }, `Sitzung ${d.nr} beendet.`);
-      case "reihenfolge": return h("div", { class: "eintrag system" }, `Neue Reihenfolge: ${d.reihenfolge.join(", ")}`);
-      case "freie_rede": return h("div", { class: "eintrag system" }, d.an ? "Freie Rede: alle dürfen erzählen." : "Freie Rede beendet.");
-      default: return h("div", { class: "eintrag system" }, e.typ);
+    for (const [titel, feld] of [["Schattenbooster", "booster"], ["Vorteile", "vorteile"], ["Nachteile", "nachteile"], ["Ausrüstung", "ausruestung"], ["Connections", "connections"], ["Stichworte", "stichworte"], ["Zitate", "zitate"]]) {
+      const l = b[feld];
+      if (!l || !l.length) continue;
+      rumpf.appendChild(h("section", { class: "abschnitt" }, h("p", { class: "etikett" }, titel),
+        h("div", { class: "liste" }, l.map((e) => h("div", null, h("span", null, typeof e === "string" ? e : (e.name || "") + (e.beschreibung ? ": " + e.beschreibung : "")))))));
     }
+    rumpf.appendChild(h("p", { class: "mono leise", style: "font-size:.8rem" }, `KARMA ${zs.karma || 0} · GESAMT ${zs.gesamtKarma || 0}`));
   }
 
-  function renderWuerfel(wuerfe, vieren, schicksal) {
-    const w = h("div", { class: "wuerfel" });
-    for (const x of wuerfe) w.appendChild(h("b", { class: x >= 5 || (vieren && x === 4) ? "erfolg" : "" }, x));
-    if (schicksal) {
-      w.appendChild(h("b", {
-        class: "schicksal " + (schicksal.ergebnis === "patzer" ? "patzer" : schicksal.ergebnis === "gluecksfall" ? "erfolg" : ""),
-        title: "Schicksalswürfel",
-      }, schicksal.wurf));
-    }
-    return w;
+  // ---------- Bilder hochladen und zuschneiden
+
+  async function verkleinere(datei) {
+    const bild = await ladeBild(datei);
+    const max = 1600;
+    const faktor = Math.min(1, max / Math.max(bild.width, bild.height));
+    const w = Math.round(bild.width * faktor), hh = Math.round(bild.height * faktor);
+    const leinwand = document.createElement("canvas");
+    leinwand.width = w; leinwand.height = hh;
+    leinwand.getContext("2d").drawImage(bild, 0, 0, w, hh);
+    const alsBlob = (typ, q) => new Promise((ok) => leinwand.toBlob(ok, typ, q));
+    let blob = await alsBlob("image/webp", 0.82);
+    if (!blob || blob.type !== "image/webp") blob = await alsBlob("image/jpeg", 0.85); // Safari kann kein WebP erzeugen
+    for (let q = 0.75; blob.size > 1800000 && q > 0.3; q -= 0.15) blob = await alsBlob("image/jpeg", q);
+    return { blob, w, h: hh };
   }
 
-  function renderErgebnis(v) {
-    return h("span", { class: "ergebnis " + (v.gelungen ? "ja" : "nein") }, v.gelungen ? `gelungen, ${v.netto} netto` : "misslungen");
-  }
-
-  function renderProbenEintrag(e) {
-    const d = e.daten;
-    const teile = d.teile.map((t) => `${t.quelle} ${t.wert >= 0 && t !== d.teile[0] ? "+" : ""}${t.wert}`).join(", ");
-    const gegen = d.gegen.art === "schwierigkeit" ? `Schwierigkeit ${d.gegen.wert}` : `Gegner-Pool ${d.gegen.wert}`;
-    const eintrag = h("div", { class: "eintrag probe" },
-      h("div", null, h("span", { class: "wer" }, nameVon(d)), d.bezeichnung || "Probe"),
-      h("div", { class: "aufschluesselung" }, `${d.pool} Würfel (${teile})${d.eigen.edgeVorher ? ", Edge vor dem Wurf" : ""} gegen ${gegen}`),
-      renderWuerfel(d.eigen.wuerfe, d.eigen.vieren, d.eigen.schicksal),
-      h("div", { class: "aufschluesselung" }, "Gegenseite:"),
-      renderWuerfel(d.gegner.wuerfe, false, null),
-      h("div", null, `${d.eigen.erfolge} gegen ${d.gegner.erfolge} Erfolge – `, renderErgebnis(d.vergleich)),
-      d.eigen.schicksal && d.eigen.schicksal.ergebnis ? h("div", { class: "ergebnis " + (d.eigen.schicksal.ergebnis === "patzer" ? "nein" : "ja") },
-        d.eigen.schicksal.ergebnis === "patzer" ? "Patzer! Eine Komplikation tritt ein (S. 51)." : "Glücksfall! Etwas unerwartet Gutes passiert (S. 51).") : null,
-      d.hinweise && d.hinweise.length ? h("div", { class: "aufschluesselung" }, d.hinweise.join(" · ")) : null);
-
-    const eigene = d.von === S.zustand.ich;
-    const letzte = eigene && !S.verlauf.some((x) => x.nr > e.nr && ((x.typ === "probe" && x.daten.von === d.von) || (x.typ === "probe_edge" && x.daten.bezug === e.nr)));
-    if (letzte && !d.eigen.edgeVorher && edgeRest(ich()) > 0) {
-      eintrag.appendChild(h("button", { class: "zweit", onclick: () => sende({ typ: "edge_nachher", nr: e.nr }) }, "Edge nach dem Wurf: Nicht-Erfolge neu würfeln"));
-    }
-    return eintrag;
-  }
-
-  function renderEingabe() {
-    const darf = darfErzaehlen();
-    const text = h("textarea", {
-      id: "erzaehlung-text",
-      placeholder: darf ? "Was tut dein Charakter?" : "Entwurf für deine nächste Erzählung …",
-      "aria-label": "Erzählung",
-      oninput: (e) => { S.entwurf = e.target.value; speicherSchreib("sr-entwurf", S.entwurf); },
+  function ladeBild(datei) {
+    return new Promise((ok, fehler) => {
+      const url = URL.createObjectURL(datei);
+      const img = new Image();
+      img.onload = () => { ok(img); };
+      img.onerror = () => fehler(new Error("Bild nicht lesbar"));
+      img.src = url;
     });
-    text.value = S.entwurf;
-    const senden = h("button", {
-      disabled: !darf,
-      onclick: () => {
-        if (!S.entwurf.trim()) return;
-        sende({ typ: "erzaehlung", text: S.entwurf });
-        S.entwurf = ""; speicherSchreib("sr-entwurf", null); render();
-      },
-    }, "Erzählung senden");
-    const beenden = h("button", { class: "zweit", disabled: !binDran(), onclick: () => sende({ typ: "zug_beenden" }) }, "Zug beenden");
-    return h("div", { class: "karte aktionen" }, text, h("div", { class: "zeile", style: "margin-top:.5rem" }, senden, beenden),
-      !darf ? h("p", { class: "leise klein" }, "Du kannst schon schreiben; senden geht, sobald du dran bist.") : null);
   }
 
-  function probenAnfrage() {
-    const p = S.probe;
-    const mods = [];
-    if (Number(p.mod)) mods.push({ quelle: p.modQuelle || (p.slMod ? "SL-Modifikator" : "Modifikator"), wert: Number(p.mod), sl: p.slMod });
-    if (p.art === "fertigkeit") {
-      return { fertigkeit: p.fertigkeit, spezialisierung: p.spezialisierung || undefined, modifikatoren: mods };
+  async function bildWaehlen(datei) {
+    try {
+      const { blob, w, h: hh } = await verkleinere(datei);
+      const url = URL.createObjectURL(blob);
+      const seite = Math.min(w, hh) * 0.45;
+      zuschnittDialog(url, { x: (w - seite) / 2 / w, y: (hh - seite) / 2 / hh, s: seite / w, w, h: hh }, blob);
+    } catch (e) { meldung(e.message || "Bild konnte nicht verarbeitet werden"); }
+  }
+
+  /** Quadratischen Porträtrahmen auf dem Bild verschieben und in der Größe ändern */
+  function zuschnittDialog(url, start, blob) {
+    const a = { ...start };
+    const bildEl = h("img", { src: url, alt: "" });
+    const rahmen = h("div", { class: "rahmen" });
+    const flaeche = h("div", { class: "zuschnitt" }, bildEl, rahmen);
+    const groesse = h("input", { type: "range", min: "0.08", max: String(Math.min(1, a.h / a.w)), step: "0.01", value: String(a.s), "aria-label": "Größe des Ausschnitts" });
+    function zeichne() {
+      const W = flaeche.clientWidth, H = W * (a.h / a.w);
+      const seite = a.s * W;
+      a.x = Math.min(Math.max(0, a.x), 1 - a.s);
+      a.y = Math.min(Math.max(0, a.y), Math.max(0, 1 - seite / H));
+      Object.assign(rahmen.style, { left: a.x * W + "px", top: a.y * H + "px", width: seite + "px", height: seite + "px" });
     }
-    const a = ATTRIBUTSPROBEN[p.attributsprobe];
-    return { attribute: a.attribute, verdoppeln: a.verdoppeln, modifikatoren: mods };
+    let zug = null;
+    rahmen.addEventListener("pointerdown", (e) => { zug = { x: e.clientX, y: e.clientY, ax: a.x, ay: a.y }; rahmen.setPointerCapture(e.pointerId); });
+    rahmen.addEventListener("pointermove", (e) => {
+      if (!zug) return;
+      const W = flaeche.clientWidth, H = W * (a.h / a.w);
+      a.x = zug.ax + (e.clientX - zug.x) / W;
+      a.y = zug.ay + (e.clientY - zug.y) / H;
+      zeichne();
+    });
+    rahmen.addEventListener("pointerup", () => (zug = null));
+    groesse.addEventListener("input", () => { a.s = Number(groesse.value); zeichne(); });
+    bildEl.addEventListener("load", zeichne);
+    const speichern = h("button", { class: "knopf voll" }, blob ? "Hochladen" : "Speichern");
+    speichern.addEventListener("click", async () => {
+      speichern.disabled = true;
+      try {
+        const ausschnitt = { x: a.x, y: a.y, s: a.s, w: a.w, h: a.h };
+        const r = blob
+          ? await fetch(SERVER + "/api/bild?art=sc", { method: "POST", headers: { Authorization: "Bearer " + S.token, "Content-Type": blob.type, "X-Ausschnitt": JSON.stringify(ausschnitt) }, body: blob })
+          : await fetch(SERVER + "/api/bild/ausschnitt", { method: "PUT", headers: { Authorization: "Bearer " + S.token, "Content-Type": "application/json" }, body: JSON.stringify(ausschnitt) });
+        if (!r.ok) throw new Error(r.status === 413 ? "Bild zu groß" : "Speichern fehlgeschlagen");
+        schliesseDialog();
+        meldung("Gespeichert", true);
+      } catch (e) { meldung(e.message); speichern.disabled = false; }
+    });
+    dialog(h("div", { class: "glas karte ecken dialog" },
+      h("h2", null, "Porträtausschnitt"),
+      h("p", { class: "leise" }, "Zieh den Rahmen auf das Gesicht. Dieser Ausschnitt erscheint in der Teamleiste."),
+      flaeche, h("label", { class: "feld" }, "Größe"), groesse,
+      h("div", { style: "display:flex;gap:8px" }, speichern, h("button", { class: "knopf", onclick: schliesseDialog }, "Abbrechen"))));
+    requestAnimationFrame(zeichne);
   }
 
-  function probenBezeichnung() {
-    const p = S.probe;
-    if (p.bezeichnung) return p.bezeichnung;
-    return p.art === "fertigkeit" ? `${p.fertigkeit}${p.spezialisierung ? " (" + p.spezialisierung + ")" : ""}` : ATTRIBUTSPROBEN[p.attributsprobe].name;
+  function dialog(inhalt) {
+    const d = document.getElementById("dialog");
+    d.textContent = "";
+    d.appendChild(h("div", { class: "dialog-hintergrund", onclick: (e) => { if (e.target === e.currentTarget) schliesseDialog(); } }, inhalt));
+  }
+  function schliesseDialog() { document.getElementById("dialog").textContent = ""; }
+
+  // ---------- Nachrichten
+
+  function markiereGelesen() {
+    const n = privateNachrichten();
+    if (n.length) { S.gelesen = Math.max(S.gelesen, n[0].nr); merke("sr-gelesen", S.gelesen); }
   }
 
-  let vorschauTimer = null;
-  function fordereVorschau() {
-    clearTimeout(vorschauTimer);
-    vorschauTimer = setTimeout(() => {
-      if (S.probe.art === "fertigkeit" && !S.probe.fertigkeit) { S.vorschau = null; return renderVorschau(); }
-      sende({ typ: "probe_vorschau", anfrage: probenAnfrage() });
-    }, 150);
-  }
-
-  function renderVorschau() {
-    const el = document.getElementById("probe-vorschau");
-    if (!el) return;
-    el.textContent = "";
-    const v = S.vorschau;
-    if (!v) return;
-    if (v.ok === false) { el.appendChild(h("span", { class: "ergebnis nein" }, v.meldung)); return; }
-    el.appendChild(h("strong", null, `${v.wuerfel} Würfel`));
-    el.appendChild(h("span", { class: "leise" }, " = " + v.teile.map((t) => `${t.quelle} ${t.wert}`).join(" + ")));
-    if (v.hinweise.length) el.appendChild(h("div", { class: "leise klein" }, v.hinweise.join(" · ")));
-  }
-
-  function renderProbe() {
-    const p = S.probe;
-    const me = ich();
-    const bogen = me.charakter ? me.charakter.bogen : { fertigkeiten: {} };
-    const eigene = Object.keys(bogen.fertigkeiten || {});
-    if (!p.fertigkeit && eigene.length) p.fertigkeit = eigene[0];
-
-    const setze = (feld, wert, neuRender) => { p[feld] = wert; if (neuRender) render(); fordereVorschau(); };
-
-    const art = h("select", { id: "probe-art", onchange: (e) => setze("art", e.target.value, true) },
-      h("option", { value: "fertigkeit" }, "Fertigkeitsprobe"),
-      h("option", { value: "attribut" }, "Reine Attributsprobe"));
-    art.value = p.art;
-
-    let auswahl;
-    if (p.art === "fertigkeit") {
-      const sel = h("select", { id: "probe-fertigkeit", onchange: (e) => { p.spezialisierung = ""; setze("fertigkeit", e.target.value, true); } },
-        h("optgroup", { label: "Auf dem Bogen" }, eigene.map((f) => h("option", { value: f }, `${f} ${bogen.fertigkeiten[f].wert}`))),
-        h("optgroup", { label: "Ungeübt (nur Attribut)" }, FERTIGKEITEN.filter((f) => !eigene.includes(f)).map((f) => h("option", { value: f }, f))));
-      sel.value = p.fertigkeit;
-      const spez = ((bogen.fertigkeiten[p.fertigkeit] || {}).spezialisierungen || []);
-      const spezSel = spez.length ? h("select", { id: "probe-spez", onchange: (e) => setze("spezialisierung", e.target.value) },
-        h("option", { value: "" }, "keine Spezialisierung"),
-        spez.map((s) => h("option", { value: s.name }, `${s.name} +${s.bonus || 2}`))) : null;
-      if (spezSel) spezSel.value = p.spezialisierung;
-      auswahl = h("div", { class: "zeile" }, h("div", null, h("label", { for: "probe-fertigkeit" }, "Fertigkeit"), sel),
-        spezSel ? h("div", null, h("label", { for: "probe-spez" }, "Spezialisierung"), spezSel) : null);
-    } else {
-      const sel = h("select", { id: "probe-attr", onchange: (e) => setze("attributsprobe", e.target.value) },
-        Object.entries(ATTRIBUTSPROBEN).map(([k, a]) => h("option", { value: k }, a.name)));
-      sel.value = p.attributsprobe;
-      auswahl = h("div", null, h("label", { for: "probe-attr" }, "Probe (S. 50)"), sel);
+  function renderNachrichten(rumpf) {
+    rumpf.appendChild(h("p", { class: "etikett" }, "Verschlüsselt · nur du siehst diesen Kanal"));
+    const liste = privateNachrichten();
+    if (!liste.length) { rumpf.appendChild(h("p", { class: "leerzustand" }, "Noch keine privaten Nachrichten. Hier landet, was nur dein Charakter erfährt.")); return; }
+    for (const e of liste) {
+      const zeit = new Date(e.zeit).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+      rumpf.appendChild(h("article", { class: "glas nachricht" + (e.nr > S.gelesen ? " neu" : "") },
+        h("div", { class: "kopfzeile" }, h("span", null, e.typ === "hinweis" ? "HINWEIS" : "NUR FÜR DICH"), h("span", null, zeit)),
+        h("p", null, e.daten.text)));
     }
-
-    const mod = h("input", { id: "probe-mod", type: "number", min: "-10", max: "10", value: p.mod, onchange: (e) => setze("mod", e.target.value) });
-    const modQuelle = h("input", { id: "probe-modquelle", type: "text", placeholder: "z. B. Dunkelheit", value: p.modQuelle, onchange: (e) => setze("modQuelle", e.target.value) });
-    const slMod = h("label", { class: "check" }, h("input", { type: "checkbox", checked: p.slMod, onchange: (e) => setze("slMod", e.target.checked) }), "SL-Modifikator (max. ±5, S. 49)");
-
-    const gegenArt = h("select", { id: "probe-gegenart", onchange: (e) => { p.gegenArt = e.target.value; p.gegenWert = p.gegenArt === "schwierigkeit" ? 8 : 6; render(); } },
-      h("option", { value: "schwierigkeit" }, "Schwierigkeit (S. 50)"), h("option", { value: "pool" }, "Pool eines Gegners"));
-    gegenArt.value = p.gegenArt;
-    const gegenWert = p.gegenArt === "schwierigkeit"
-      ? h("select", { id: "probe-gegenwert", onchange: (e) => (p.gegenWert = Number(e.target.value)) }, SCHWIERIGKEITEN.map(([w, t]) => h("option", { value: w }, t)))
-      : h("input", { id: "probe-gegenwert", type: "number", min: "0", max: "40", value: p.gegenWert, onchange: (e) => (p.gegenWert = Number(e.target.value)) });
-    gegenWert.value = p.gegenWert;
-
-    const edgeOk = edgeRest(me) > 0;
-    const ppOk = me.plotpunkte > 0;
-    const edge = h("label", { class: "check" }, h("input", { type: "checkbox", disabled: !edgeOk, checked: p.edgeVorher && edgeOk, onchange: (e) => (p.edgeVorher = e.target.checked) }),
-      `Edge vor dem Wurf: +1 Würfel, Vieren zählen (noch ${edgeRest(me)})`);
-    const lebe = h("label", { class: "check" }, h("input", { type: "checkbox", disabled: !ppOk, checked: p.lebeGefaehrlich && ppOk, onchange: (e) => (p.lebeGefaehrlich = e.target.checked) }),
-      "Lebe gefährlich: Schicksalswürfel (1 Plotpunkt)");
-    const bez = h("input", { id: "probe-bez", type: "text", placeholder: "optional, z. B. Schloss knacken", value: p.bezeichnung, onchange: (e) => (p.bezeichnung = e.target.value) });
-
-    const wuerfeln = h("button", {
-      disabled: !me.charakter,
-      onclick: () => {
-        sende({
-          typ: "probe_wuerfeln",
-          bezeichnung: probenBezeichnung(),
-          anfrage: probenAnfrage(),
-          gegen: { art: p.gegenArt, wert: Number(p.gegenWert) },
-          edgeVorher: p.edgeVorher && edgeOk,
-          schicksalswuerfel: p.lebeGefaehrlich && ppOk,
-        });
-        p.edgeVorher = false; p.lebeGefaehrlich = false; p.bezeichnung = "";
-      },
-    }, "Würfeln");
-
-    const box = klappbar("probe", false,
-      h("summary", null, "Probe würfeln"),
-      h("div", { class: "feld" }, h("label", { for: "probe-art" }, "Art"), art),
-      h("div", { class: "feld" }, auswahl),
-      h("div", { class: "zeile feld" }, h("div", null, h("label", { for: "probe-mod" }, "Modifikator"), mod), h("div", null, h("label", { for: "probe-modquelle" }, "Grund"), modQuelle)),
-      h("div", { class: "feld" }, slMod),
-      h("div", { class: "zeile feld" }, h("div", null, h("label", { for: "probe-gegenart" }, "Gegenseite"), gegenArt), h("div", null, h("label", { for: "probe-gegenwert" }, "Würfel der Gegenseite"), gegenWert)),
-      h("div", { class: "feld" }, edge, lebe),
-      h("div", { class: "feld" }, h("label", { for: "probe-bez" }, "Bezeichnung"), bez),
-      h("div", { class: "feld", id: "probe-vorschau", "aria-live": "polite" }),
-      wuerfeln);
-    requestAnimationFrame(() => { renderVorschau(); fordereVorschau(); });
-    return box;
+    markiereGelesen();
   }
 
-  function renderPlotpunkte() {
-    const me = ich();
-    const effekte = Object.entries(S.zustand.effekte || {}).filter(([k]) => k !== "lebe_gefaehrlich");
-    const zielSel = h("select", { id: "pp-ziel" }, S.zustand.spieler.filter((s) => s.charakter).map((s) => h("option", { value: s.id }, s.charakter.bogen.name)));
-    zielSel.value = S.zustand.ich;
-    const monSel = h("select", { id: "pp-monitor" }, h("option", { value: "K" }, "Körperlich"), h("option", { value: "G" }, "Geistig"));
-    const notiz = h("input", { id: "pp-notiz", type: "text", placeholder: "Was passiert? (optional)", value: S.ppNotiz || "", oninput: (e) => (S.ppNotiz = e.target.value) });
-    return klappbar("plotpunkte", false,
-      h("summary", null, `Plotpunkte einsetzen (${me.plotpunkte})`),
-      h("p", { class: "leise klein" }, "Jeder Einsatz kostet 1 Plotpunkt und geht an die Spielleitung (S. 47 f.). Lebe gefährlich wählst du direkt bei der Probe."),
-      h("div", { class: "feld" }, h("label", { for: "pp-notiz" }, "Notiz"), notiz),
-      h("div", { class: "zeile feld" }, h("div", null, h("label", { for: "pp-ziel" }, "Ziel für Erste Hilfe"), zielSel), h("div", null, h("label", { for: "pp-monitor" }, "Monitor"), monSel)),
-      h("div", { class: "effekte" }, effekte.map(([k, t]) => h("button", {
-        class: "zweit", disabled: me.plotpunkte < 1,
-        onclick: () => {
-          if (!confirm(`${t} für 1 Plotpunkt einsetzen?`)) return;
-          sende({ typ: "plotpunkt", effekt: k, notiz: notiz.value, ziel: zielSel.value, monitor: monSel.value });
-          S.ppNotiz = "";
-        },
-      }, t))));
-  }
+  // ---------- Lobby (Handy und Tisch)
 
-  // ---------- Charakterbogen
-
-  function renderBogen() {
-    const mitBogen = S.zustand.spieler.filter((s) => s.charakter);
-    if (!mitBogen.length) return h("p", { class: "leise" }, "Noch kein Charakterbogen hinterlegt.");
-    const id = S.bogenAnsicht && spieler(S.bogenAnsicht) && spieler(S.bogenAnsicht).charakter ? S.bogenAnsicht : (ich().charakter ? S.zustand.ich : mitBogen[0].id);
-    const s = spieler(id);
-    const b = s.charakter.bogen;
-    const z = s.charakter.zustand;
-    const wahl = h("select", { id: "bogen-wahl", onchange: (e) => { S.bogenAnsicht = e.target.value; render(); } },
-      mitBogen.map((x) => h("option", { value: x.id }, `${x.charakter.bogen.name} (${x.name})`)));
-    wahl.value = id;
-
-    const liste = (titel, eintraege) => eintraege && eintraege.length ? [h("h3", null, titel), h("ul", null, eintraege.map((e) => h("li", null, typeof e === "string" ? e : (e.name || "") + (e.beschreibung ? ": " + e.beschreibung : ""))))] : [];
-
-    return h("section", null,
-      h("div", { class: "feld" }, h("label", { for: "bogen-wahl" }, "Bogen von"), wahl),
-      h("div", { class: "karte" },
-        h("h2", null, b.name),
-        h("p", { class: "leise" }, [b.metatyp, b.konzept].filter(Boolean).join(" · ")),
-        h("div", { class: "werteliste" },
-          ATTRIBUTE.map((a) => h("div", null, h("span", null, a), h("strong", null, b.attribute[a]))),
-          h("div", null, h("span", null, "Edge"), h("strong", null, `${edgeRest(s)}/${b.edge}`)),
-          h("div", null, h("span", null, "Plotpunkte"), h("strong", null, s.plotpunkte))),
-        h("h3", null, "Zustand"),
-        h("p", null, "Panzerung ", renderMonitor(z.panzerung.max, z.panzerung.schaden, "panzer")),
-        h("p", null, "Körperlich ", renderMonitor(z.monitore.K.max, z.monitore.K.schaden)),
-        h("p", null, "Geistig ", renderMonitor(z.monitore.G.max, z.monitore.G.schaden)),
-        z.cyberdeck ? h("p", null, `Cyberdeck (Stufe ${z.cyberdeck.stufe}, Firewall ${z.cyberdeck.firewall}) `, renderMonitor(z.cyberdeck.max, z.cyberdeck.schaden)) : null,
-        h("h3", null, "Fertigkeiten"),
-        h("div", { class: "tabelle" }, h("table", null,
-          h("thead", null, h("tr", null, h("th", null, "Fertigkeit"), h("th", null, "Wert"), h("th", null, "Spezialisierung"), h("th", null, "Pool"))),
-          h("tbody", null, Object.entries(b.fertigkeiten || {}).map(([f, w]) => {
-            const attr = { Astralkampf: "WIL", Beschwören: "WIL", Hexerei: "WIL", Survival: "WIL", Biotech: "LOG", Elektronik: "LOG", Hacking: "LOG", Mechanik: "LOG", Spurenlesen: "LOG", Tasken: "LOG", Wissensfertigkeiten: "LOG", Einschüchtern: "CHA", Überreden: "CHA", Verhandlung: "CHA", Verkleiden: "CHA" }[f] || "GES";
-            return h("tr", null, h("td", null, f), h("td", null, w.wert), h("td", null, (w.spezialisierungen || []).map((x) => `${x.name} +${x.bonus || 2}`).join(", ")), h("td", null, `${w.wert + b.attribute[attr]} (${attr})`));
-          })))),
-        (b.waffen && b.waffen.length) ? [h("h3", null, "Waffen"), h("div", { class: "tabelle" }, h("table", null,
-          h("thead", null, h("tr", null, h("th", null, "Waffe"), h("th", null, "Schaden"), h("th", null, "Nah"), h("th", null, "Mittel"), h("th", null, "Weit"))),
-          h("tbody", null, b.waffen.map((w) => {
-            const r = w.reichweiten || {};
-            const f = (x) => x === null || x === undefined || x === "-" ? "–" : (x === "OK" ? "OK" : String(x));
-            return h("tr", null, h("td", null, w.name), h("td", null, `${w.schaden}${w.art}`), h("td", null, f(r.nah)), h("td", null, f(r.mittel)), h("td", null, f(r.weit)));
-          }))))] : null,
-        ...liste("Schattenbooster", b.booster),
-        ...liste("Vorteile", b.vorteile),
-        ...liste("Nachteile", b.nachteile),
-        ...liste("Ausrüstung", b.ausruestung),
-        ...liste("Connections", b.connections),
-        ...liste("Stichworte", b.stichworte),
-        ...liste("Zitate", b.zitate),
-        h("p", { class: "leise klein" }, `Karma: ${z.karma || 0} (gesamt ${z.gesamtKarma || 0})`)));
-  }
-
-  // ---------- Lobby
-
-  function renderLobby() {
-    const sz = S.zustand.sitzung;
-    const alle = S.zustand.spieler;
+  function renderLobbyKarte(tisch) {
+    const z = Z();
+    const sz = z.sitzung;
     if (!S.reihenfolgeEntwurf) {
       const bekannt = sz.reihenfolge.filter((id) => spieler(id));
-      S.reihenfolgeEntwurf = [...bekannt, ...alle.map((s) => s.id).filter((id) => !bekannt.includes(id))];
+      S.reihenfolgeEntwurf = [...bekannt, ...z.spieler.map((s) => s.id).filter((id) => !bekannt.includes(id))];
     }
     const entwurf = S.reihenfolgeEntwurf.filter((id) => spieler(id));
+    z.spieler.forEach((s) => { if (!entwurf.includes(s.id)) entwurf.push(s.id); });
     const verschiebe = (i, d) => { const j = i + d; if (j < 0 || j >= entwurf.length) return; [entwurf[i], entwurf[j]] = [entwurf[j], entwurf[i]]; S.reihenfolgeEntwurf = entwurf; render(); };
-
-    const liste = h("ol", { class: "spielerliste" }, entwurf.map((id, i) => {
-      const s = spieler(id);
-      return h("li", null,
-        h("i", { class: "verbindung" + (s.online ? " an" : ""), title: s.online ? "online" : "offline" }),
-        h("span", { class: "name" }, s.charakter ? `${s.charakter.bogen.name} (${s.name})` : `${s.name} – kein Charakter`),
-        h("span", { class: "leise klein" }, s.charakter ? `${s.plotpunkte} PP` : ""),
-        h("button", { class: "zweit", "aria-label": "nach oben", disabled: i === 0, onclick: () => verschiebe(i, -1) }, "↑"),
-        h("button", { class: "zweit", "aria-label": "nach unten", disabled: i === entwurf.length - 1, onclick: () => verschiebe(i, 1) }, "↓"));
-    }));
-
-    return h("section", null,
-      h("div", { class: "karte" },
-        h("h2", null, sz.aktiv ? `Sitzung ${sz.nr} läuft` : "Lobby"),
-        h("p", { class: "leise" }, "Sitzreihenfolge für die Erzählungen (S. 45). Wer beim Start offline ist oder keinen Charakter hat, fällt heraus und bleibt passiv im Hintergrund."),
-        liste,
-        h("div", { class: "zeile", style: "margin-top:.75rem" },
-          h("button", { class: "zweit", onclick: () => { sende({ typ: "reihenfolge", reihenfolge: entwurf }); } }, "Reihenfolge übernehmen"),
-          sz.aktiv
-            ? h("button", { class: "gefahr", onclick: () => { if (confirm("Sitzung für alle beenden?")) sende({ typ: "sitzung_beenden" }); } }, "Sitzung beenden")
-            : h("button", { onclick: () => { sende({ typ: "reihenfolge", reihenfolge: entwurf }); setTimeout(() => sende({ typ: "sitzung_starten" }), 200); } }, "Sitzung starten"))),
-      sz.aktiv ? h("div", { class: "karte" },
-        h("h2", null, "Freie Rede"),
-        h("p", { class: "leise" }, "Für Gespräche: Die Rundenfolge ruht, alle dürfen erzählen, bis eine Probe nötig wird (S. 45)."),
-        h("button", { class: "zweit", onclick: () => sende({ typ: "freie_rede", an: !sz.freieRede }) }, sz.freieRede ? "Freie Rede beenden" : "Freie Rede beginnen")) : null,
-      h("div", { class: "karte" },
-        h("p", { class: "leise" }, `Plotpunkte der Spielleitung: ${S.zustand.slPlotpunkte}`),
-        h("button", { class: "zweit", onclick: () => { if (confirm("Auf diesem Gerät abmelden?")) abmelden(); } }, "Abmelden")));
+    return h("section", { class: "glas karte ecken" },
+      h("h2", null, sz.aktiv ? `Sitzung ${sz.nr} läuft` : "Lobby"),
+      h("p", { class: "leise" }, "Reihenfolge der Erzählungen (S. 45). Wer beim Start offline ist oder keinen Bogen hat, bleibt passiv im Hintergrund."),
+      h("ol", { class: "spielerliste" }, entwurf.map((id, i) => {
+        const s = spieler(id);
+        return h("li", null, h("span", { class: "punkt" + (s.online ? " an" : "") }), portraet(s, 32), h("span", { class: "n" }, `${scName(s)} (${s.name})`),
+          h("button", { class: "knopf", "aria-label": "nach oben", disabled: i === 0 || null, onclick: () => verschiebe(i, -1) }, "↑"),
+          h("button", { class: "knopf", "aria-label": "nach unten", disabled: i === entwurf.length - 1 || null, onclick: () => verschiebe(i, 1) }, "↓"));
+      })),
+      h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
+        h("button", { class: "knopf", onclick: () => sende({ typ: "reihenfolge", reihenfolge: entwurf }) }, "Reihenfolge übernehmen"),
+        sz.aktiv
+          ? h("button", { class: "knopf amber", onclick: () => { if (confirm("Sitzung für alle beenden?")) sende({ typ: "sitzung_beenden" }); } }, "Sitzung beenden")
+          : h("button", { class: "knopf voll", onclick: () => { sende({ typ: "reihenfolge", reihenfolge: entwurf }); setTimeout(() => { sende({ typ: "sitzung_starten" }); S.lobbyOffen = false; }, 250); } }, "Sitzung starten"),
+        sz.aktiv ? h("button", { class: "knopf", onclick: () => sende({ typ: "freie_rede", an: !sz.freieRede }) }, sz.freieRede ? "Freie Rede beenden" : "Freie Rede") : null,
+        tisch && sz.aktiv ? h("button", { class: "knopf cyan", onclick: () => { S.lobbyOffen = false; render(); } }, "Zurück zur Szene") : null),
+      h("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:8px" },
+        h("span", { class: "mono leise" }, tisch ? "TISCHGERÄT" : `ANGEMELDET ALS ${ich().name.toUpperCase()}`),
+        h("button", { class: "knopf", onclick: () => { if (confirm("Auf diesem Gerät abmelden?")) abmelden(); } }, "Abmelden")));
   }
 
-  // ------------------------------------------------------------ Start
+  // ------------------------------------------------------------------ Start
 
+  document.addEventListener("pointerup", () => { if (S.aufnahme && !istTisch()) aufnahmeStopp(); });
+  setInterval(() => { if (S.ausstehend && !S.sperre) { S.ausstehend = false; render(); } }, 500);
   render();
   if (S.token) verbinde();
 })();

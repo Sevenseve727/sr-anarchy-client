@@ -131,7 +131,7 @@ label.feld { display: block; font-family: var(--mono); font-size: 0.78rem; lette
 .marke.rec { background: var(--magenta); color: #16030b; }
 
 /* ---------------------------------------------------------------- Handyansicht */
-.handy { max-width: 560px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; }
+.handy { max-width: 560px; margin: 0 auto; min-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); min-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; }
 .handy-kopf { display: flex; align-items: center; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--linie); }
 .handy-kopf .wer { flex: 1; min-width: 0; }
 .handy-kopf .name { font-family: var(--display); font-weight: 700; font-size: 1.3rem; letter-spacing: 0.06em; color: var(--cyan-hell); text-transform: uppercase; }

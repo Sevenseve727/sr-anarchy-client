@@ -131,8 +131,14 @@
           if (S.stream && S.stream.id === n.ereignis.daten.id) S.stream = null;
           vorlesen(n.ereignis.daten.text);
         }
-        if (n.ereignis.typ === "hinweis") meldung(n.ereignis.daten.text);
+        if (n.ereignis.typ === "hinweis" || n.ereignis.typ === "system") meldung(n.ereignis.daten.text);
+        if (n.ereignis.typ === "privat") meldung("Neue private Nachricht", true);
         break;
+      case "ereignis_update": {
+        const e = S.verlauf.find((x) => x.nr === n.nr);
+        if (e) e.daten = n.daten;
+        return;
+      }
       case "sl_stream":
         S.stream = { id: n.id, text: n.text };
         if (aktualisiereStream()) return;
@@ -323,8 +329,77 @@
   // ---------- Gemeinsame Bausteine
 
   function probeText(p) {
-    const gegen = p.gegen.art === "schwierigkeit" ? { 4: "Sehr Einfach", 6: "Einfach", 8: "Durchschnittlich", 10: "Schwierig", 12: "Sehr Schwierig" }[p.gegen.wert] + ` (${p.gegen.wert})` : `Gegner-Pool ${p.gegen.wert}`;
+    let gegen;
+    if (p.gegen.art === "schwierigkeit") gegen = { 4: "Sehr Einfach", 6: "Einfach", 8: "Durchschnittlich", 10: "Schwierig", 12: "Sehr Schwierig" }[p.gegen.wert] + ` (${p.gegen.wert})`;
+    else if (p.gegen.art === "angriff") gegen = `den Angriff von ${p.gegen.name} (${p.gegen.erfolge} Erfolge)`;
+    else if (p.gegen.art === "npc") gegen = `${p.gegen.name} (${p.gegen.wert} Würfel)`;
+    else gegen = `Gegner-Pool ${p.gegen.wert}`;
     return { pool: `${p.bezeichnung} = ${p.pool} Würfel`, gegen: `gegen ${gegen} · Regelwerk ${p.seite || "S. 50"}` };
+  }
+
+  // ---------- Einspruch und Abstimmung
+
+  function renderAbstimmung(tisch) {
+    const a = Z().abstimmung;
+    if (!a) return null;
+    const abgegeben = Object.keys(a.stimmen).length;
+    const art = a.art === "regelpruefung" ? "Regelprüfung" : "Zurückspulen";
+    const karte = h("section", { class: "glas karte", style: "border-color:var(--amber)" },
+      h("p", { class: "etikett", style: "color:var(--amber)" }, `Einspruch · ${art} · ${abgegeben} von ${a.teilnehmer.length} Stimmen`),
+      h("p", null, `${scName(spieler(a.von))}: "${a.begruendung}"`),
+      h("p", { class: "mono leise", style: "font-size:.8rem" }, a.teilnehmer.map((t) => `${scName(spieler(t))} ${t in a.stimmen ? (a.stimmen[t] ? "✓" : "✗") : "…"}`).join("   ")));
+    if (tisch) return karte;
+    const ichId = Z().ich;
+    if (a.teilnehmer.includes(ichId) && !(ichId in a.stimmen)) {
+      karte.appendChild(h("div", { style: "display:flex;gap:8px" },
+        h("button", { class: "knopf voll", onclick: () => sende({ typ: "stimme", ja: true }) }, "Zustimmen"),
+        h("button", { class: "knopf", onclick: () => sende({ typ: "stimme", ja: false }) }, "Ablehnen")));
+    }
+    if (Z().overrideSpieler === ichId && abgegeben < a.teilnehmer.length) {
+      karte.appendChild(h("p", { class: "leise", style: "font-size:.85rem" }, "Es fehlen Stimmen. Als Override kannst du entscheiden:"));
+      karte.appendChild(h("div", { style: "display:flex;gap:8px" },
+        h("button", { class: "knopf amber", onclick: () => { if (confirm("Einspruch per Override annehmen?")) sende({ typ: "override", ja: true }); } }, "Override: annehmen"),
+        h("button", { class: "knopf", onclick: () => { if (confirm("Einspruch per Override ablehnen?")) sende({ typ: "override", ja: false }); } }, "Override: ablehnen")));
+    }
+    return karte;
+  }
+
+  function zeigeEinspruch() {
+    let art = "zurueckspulen";
+    const feld = h("input", { type: "text", placeholder: "Kurz begründen, z. B. Kessler ist doch längst tot", "aria-label": "Begründung" });
+    const knopfArt = (wert, text, erklaerung) => h("button", {
+      class: "knopf" + (art === wert ? " an" : ""), style: "text-align:left;padding:8px 12px;display:flex;flex-direction:column;align-items:flex-start;gap:2px",
+      onclick: (e) => { art = wert; e.currentTarget.parentElement.querySelectorAll("button").forEach((b) => b.classList.remove("an")); e.currentTarget.classList.add("an"); },
+    }, h("span", null, text), h("span", { class: "leise", style: "font-weight:400;font-size:.8rem" }, erklaerung));
+    dialog(h("div", { class: "glas karte ecken dialog" },
+      h("h2", null, "Einspruch gegen die letzte SL-Antwort"),
+      h("div", { style: "display:grid;gap:8px" },
+        knopfArt("zurueckspulen", "Zurückspulen", "Antwort verwerfen, die KI antwortet neu. Würfel bleiben stehen."),
+        knopfArt("regelpruefung", "Regelprüfung", "Die KI prüft ihre Regelanwendung am Regelwerk und korrigiert.")),
+      feld,
+      h("p", { class: "leise", style: "font-size:.85rem" }, "Alle Teilnehmer stimmen ab; es gilt die Mehrheit, Gleichstand lehnt ab."),
+      h("div", { style: "display:flex;gap:8px" },
+        h("button", { class: "knopf voll", onclick: () => { if (!feld.value.trim()) return meldung("Bitte kurz begründen"); sende({ typ: "einspruch", art, begruendung: feld.value.trim() }); schliesseDialog(); } }, "Einspruch einlegen"),
+        h("button", { class: "knopf", onclick: schliesseDialog }, "Abbrechen"))));
+  }
+
+  function zeigeKorrektur(k) {
+    let edge = k.edge, schicksal = SCHICKSAL.indexOf(k.schicksal === "neutral" ? "neutral" : k.schicksal);
+    if (schicksal < 0) schicksal = 0;
+    const inhalt = h("div", { class: "glas karte ecken dialog" });
+    const zeichne = () => {
+      inhalt.textContent = "";
+      inhalt.append(
+        h("h2", null, "Meldung korrigieren"),
+        h("p", { class: "leise" }, `Bisher: ${k.erfolge} Erfolge${k.edge ? ", mit Edge" : ""}${k.schicksal ? ", Schicksalswürfel " + SCHICKSAL_TEXT[k.schicksal] : ""}. Die Würfel der Gegenseite bleiben, die SL erzählt neu.`),
+        h("div", { class: "schalter" },
+          h("button", { class: "knopf" + (edge ? " an" : ""), onclick: () => { edge = !edge; zeichne(); } }, h("span", null, "Edge eingesetzt"), h("span", null, edge ? "AN" : "AUS")),
+          h("button", { class: "knopf" + (schicksal ? " an" : ""), onclick: () => { schicksal = (schicksal + 1) % SCHICKSAL.length; zeichne(); } }, h("span", null, "Schicksalswürfel"), h("span", null, SCHICKSAL_TEXT[SCHICKSAL[schicksal]]))),
+        h("div", { class: "chips" }, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => h("button", { class: "knopf", onclick: () => { sende({ typ: "probe_korrigieren", erfolge: n, edge, schicksal: SCHICKSAL[schicksal] }); schliesseDialog(); } }, n))),
+        h("button", { class: "knopf", onclick: schliesseDialog }, "Abbrechen"));
+    };
+    zeichne();
+    dialog(inhalt);
   }
 
   function renderMitschriften(nurEigene) {
@@ -365,7 +440,7 @@
       haupt.appendChild(renderLobbyKarte(true));
     } else {
       haupt.appendChild(h("section", { class: "glas ecken tisch-sl" },
-        h("p", { class: "etikett", style: "margin-bottom:12px" }, S.stream ? "Spielleitung ▸ live" : "Spielleitung"),
+        h("p", { class: "etikett", style: "margin-bottom:12px" }, S.stream ? "Spielleitung ▸ live" : (z.slDenkt ? "Spielleitung ▸ denkt nach …" : "Spielleitung")),
         h("p", { class: "text", id: "sl-text" }, sl.aktuell || "Die Sitzung läuft. Wer am Zug ist, erzählt."),
         sl.vorher ? h("p", { class: "vorher" }, sl.vorher) : null));
     }
@@ -377,10 +452,16 @@
         h("div", { class: "inhalt" }, h("div", { class: "pool" }, t.pool), h("div", { class: "gegen" }, t.gegen + " · würfeln und Erfolge ansagen"))));
     }
     renderMitschriften(false).forEach((m) => haupt.appendChild(m));
+    const abst = renderAbstimmung(true);
+    if (abst) haupt.appendChild(abst);
 
     const team = h("aside", { class: "tisch-team", "aria-label": "Team" },
       h("p", { class: "etikett" }, `Team ▸ ${z.spieler.length} Runner · Porträt antippen zum Sprechen`),
-      z.spieler.map((s) => renderRunner(s, dran, sz)));
+      z.spieler.map((s) => renderRunner(s, dran, sz)),
+      (z.npcs || []).length ? h("p", { class: "etikett", style: "margin-top:8px;color:var(--magenta)" }, "Gegner") : null,
+      (z.npcs || []).map((n) => h("div", { class: "runner", style: "border-color:rgba(255,46,136,.4);padding:8px 12px;align-items:center" },
+        h("span", { class: "name", style: "flex:1" }, n.name),
+        h("span", { class: "mono", style: `font-size:.8rem;color:${n.stufe === "außer Gefecht" ? "var(--leise)" : n.stufe === "unverletzt" ? "var(--cyan-hell)" : "var(--schaden)"}` }, n.stufe.toUpperCase()))));
 
     return h("div", { class: "tisch" }, kopf, h("div", { class: "tisch-rumpf" }, haupt, team));
   }
@@ -453,7 +534,7 @@
     const z = Z();
     const sl = letzteSL();
     rumpf.appendChild(h("section", { class: "glas sl-karte" },
-      h("p", { class: "etikett", style: "margin-bottom:6px" }, S.stream ? "Spielleitung ▸ live" : "Spielleitung"),
+      h("p", { class: "etikett", style: "margin-bottom:6px" }, S.stream ? "Spielleitung ▸ live" : (z.slDenkt ? "Spielleitung ▸ denkt nach …" : "Spielleitung")),
       h("p", { class: "text", id: "sl-text" }, sl.aktuell || (z.sitzung.aktiv ? "Warte auf die Spielleitung …" : "Die Sitzung wird in der Lobby gestartet."))));
 
     const p = z.offeneProbe;
@@ -463,11 +544,20 @@
       rumpf.appendChild(h("section", { class: "probe", style: "padding:10px 14px" }, h("div", { class: "titel" }, `PROBE FÜR ${scName(spieler(p.spieler)).toUpperCase()}`), h("div", { class: "gegen" }, t.pool)));
     }
     renderMitschriften(true).forEach((m) => rumpf.appendChild(m));
+    const abst = renderAbstimmung(false);
+    if (abst) rumpf.appendChild(abst);
+    if (z.korrigierbar && !(p && p.spieler === z.ich)) {
+      const k = z.korrigierbar;
+      rumpf.appendChild(h("div", { class: "mitschrift", style: "border-color:var(--magenta)" },
+        h("span", { class: "leise" }, `Deine letzte Meldung: ${k.erfolge} Erfolge${k.edge ? " mit Edge" : ""}. Vergessen, Edge oder den Schicksalswürfel anzusagen?`),
+        h("button", { class: "knopf magenta", onclick: () => zeigeKorrektur(k) }, "Korrigieren")));
+    }
 
     if (!z.sitzung.aktiv) return;
     rumpf.appendChild(h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
       h("button", { class: "knopf cyan", disabled: amZugId() !== z.ich || !!z.offeneProbe || null, onclick: () => sende({ typ: "zug_beenden" }) }, "Zug beenden"),
-      h("button", { class: "knopf", onclick: () => zeigePlotpunkte() }, "Plotpunkt einsetzen")));
+      h("button", { class: "knopf", onclick: () => zeigePlotpunkte() }, "Plotpunkt einsetzen"),
+      z.ki ? h("button", { class: "knopf amber", disabled: !!z.abstimmung || null, onclick: () => zeigeEinspruch() }, "Einspruch") : null));
 
     // Die Sprechtaste bleibt immer sichtbar über der Reiterleiste
     const leiste = h("div", { class: "sprechleiste" });

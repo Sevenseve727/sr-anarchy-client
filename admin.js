@@ -87,6 +87,16 @@
         el("button", { class: "zweit", onclick: () => bogen(s) }, "Bogen"),
         el("button", { class: "gefahr", onclick: () => loeschen(s) }, "Entfernen")));
     }
+    $("ki-status").textContent = daten.ki ? "Aktiv: Die KI-Spielleitung antwortet (Claude Haiku 4.5)." : "Nicht aktiv: Kein ANTHROPIC_API_KEY im Worker, es antwortet die Platzhalter-SL.";
+    const kst = daten.kosten;
+    $("kosten").textContent = `Kosten heute: ${kst.heute.usd.toFixed(2)} USD in ${kst.heute.aufrufe} Aufrufen · diesen Monat: ${kst.monat.usd.toFixed(2)} USD · Tageslimit ${kst.tageslimit} USD`;
+    const ov = $("override");
+    if (document.activeElement !== ov) {
+      ov.textContent = "";
+      ov.appendChild(el("option", { value: "" }, "niemand"));
+      for (const sp of daten.spieler) ov.appendChild(el("option", { value: sp.id }, sp.name));
+      ov.value = daten.einstellungen.overrideSpieler || "";
+    }
     $("tisch-status").textContent = daten.tisch.hatCode ? (daten.tisch.online ? "Tischgerät ist verbunden." : "Tisch-Code vorhanden, Gerät nicht verbunden.") : "Noch kein Tisch-Code.";
     $("tisch-code").textContent = daten.tisch.hatCode ? "Neuen Tisch-Code erzeugen" : "Tisch-Code erzeugen";
     for (const k of ["ort", "zeit", "run", "szene"]) if (document.activeElement !== $("sz-" + k)) $("sz-" + k).value = daten.szene[k] || "";
@@ -176,6 +186,15 @@
     $("code-box").hidden = false;
     $("code-box").scrollIntoView({ behavior: "smooth" });
     lade();
+  });
+  $("override").addEventListener("change", async (e) => {
+    await api("PUT", "/admin/einstellungen", { overrideSpieler: e.target.value || null });
+    meldung("Override gespeichert", true);
+  });
+  $("testrun").addEventListener("click", async () => {
+    if (!confirm("Test-Run zurücksetzen? NSC, Kanon und Szenenkopf beginnen von vorn.")) return;
+    const { ok } = await api("POST", "/admin/testrun");
+    meldung(ok ? "Test-Run zurückgesetzt" : "Fehlgeschlagen", ok);
   });
   $("sz-speichern").addEventListener("click", async () => {
     const body = {};

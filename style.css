@@ -103,7 +103,7 @@ label.feld { display: block; font-family: var(--mono); font-size: 0.78rem; lette
 @keyframes ablauf { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
 /* ---------------------------------------------------------------- Tischansicht */
-.tisch { min-height: 100%; height: 100%; display: flex; flex-direction: column; gap: 16px; padding: 20px 24px; }
+.tisch { height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 16px; padding: 20px 24px; }
 .tisch-kopf { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; border-bottom: 1px solid var(--linie); padding-bottom: 12px; }
 .tisch-kopf .ort { font-family: var(--display); font-weight: 700; font-size: clamp(1.2rem, 2.2vw, 1.7rem); letter-spacing: 0.08em; color: var(--cyan); text-transform: uppercase; }
 .tisch-kopf .daten { display: flex; gap: 18px; flex-wrap: wrap; font-family: var(--mono); font-size: 1rem; color: var(--leise); align-items: center; }
@@ -165,8 +165,8 @@ label.feld { display: block; font-family: var(--mono); font-size: 0.78rem; lette
 .zwischentext { min-height: 1.4em; font-style: italic; color: var(--text-hell); overflow-wrap: anywhere; }
 .tippen { display: flex; gap: 8px; width: 100%; }
 .tippen input { flex: 1; }
-.handy-nav { position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--linie); background: var(--glas-2); padding-bottom: env(safe-area-inset-bottom, 0px); }
-.handy-nav button { min-height: 56px; background: transparent; border: 0; border-top: 3px solid transparent; font-family: var(--display); font-weight: 600; font-size: 0.9rem; color: var(--leise); display: flex; align-items: center; justify-content: center; gap: 6px; }
+.handy-nav { position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--linie); background: var(--glas-2); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.handy-nav button { min-height: 56px; padding: 0 2px; background: transparent; border: 0; border-top: 3px solid transparent; font-family: var(--display); font-weight: 600; font-size: 0.8rem; color: var(--leise); display: flex; align-items: center; justify-content: center; gap: 6px; }
 .handy-nav button[aria-selected="true"] { color: var(--cyan); border-top-color: var(--cyan); }
 .badge { min-width: 20px; height: 20px; border-radius: 10px; background: var(--magenta); color: #16030b; font-size: 0.72rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 5px; }
 
@@ -213,8 +213,21 @@ label.feld { display: block; font-family: var(--mono); font-size: 0.78rem; lette
 
 @media (max-width: 900px) {
   .tisch { height: auto; }
+  .tisch-sl { max-height: 60vh; }
   .tisch-rumpf { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   .mitschrift .balken span { animation: none; }
 }
+
+/* Chronik: fortlaufender Verlauf auf Tisch und Handy */
+.chronik { display: flex; flex-direction: column; gap: 14px; }
+.ch-sl { line-height: 1.5; color: #b9cbd4; white-space: pre-wrap; }
+.ch-sl.neu { color: var(--text-hell); }
+.tisch .ch-sl { font-size: clamp(1.05rem, 1.6vw, 1.3rem); }
+.tisch .ch-sl.neu { font-size: clamp(1.15rem, 1.9vw, 1.6rem); }
+.ch-erz { border-left: 3px solid var(--cyan); padding-left: 10px; color: #c9dbe4; font-style: italic; white-space: pre-wrap; }
+.ch-erz b { font-style: normal; font-family: var(--display); color: var(--cyan-hell); }
+.ch-probe { border-left: 3px solid var(--magenta); padding-left: 10px; font-family: var(--mono); font-size: 0.85rem; color: var(--magenta-leise); }
+.ch-sys { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.12em; color: var(--leise); text-align: center; text-transform: uppercase; }
+.tisch-sl { scroll-behavior: auto; }

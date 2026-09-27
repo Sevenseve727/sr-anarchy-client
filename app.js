@@ -293,6 +293,9 @@
     const fokus = aktiv && aktiv.id;
     const auswahl = aktiv && typeof aktiv.selectionStart === "number" ? [aktiv.selectionStart, aktiv.selectionEnd] : null;
     const scroll = window.scrollY;
+    const feed = document.getElementById("tisch-feed");
+    const feedUnten = !feed || feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
+    const feedPos = feed ? feed.scrollTop : 0;
     app.textContent = "";
     if (!SERVER || SERVER.includes("DEIN-NAME")) {
       app.appendChild(h("div", { class: "login" }, h("div", { class: "glas karte ecken" }, h("h1", null, "Nicht eingerichtet"), h("p", null, "In config.js fehlt die Adresse des Servers."))));
@@ -306,13 +309,18 @@
       if (el) { el.focus({ preventScroll: true }); if (auswahl && el.setSelectionRange) { try { el.setSelectionRange(auswahl[0], auswahl[1]); } catch (_) {} } }
     }
     window.scrollTo(0, scroll);
+    const neuFeed = document.getElementById("tisch-feed");
+    if (neuFeed) neuFeed.scrollTop = feedUnten ? neuFeed.scrollHeight : feedPos;
   }
 
   /** Nur den laufenden SL-Text austauschen, ohne alles neu zu zeichnen */
   function aktualisiereStream() {
     const el = document.getElementById("sl-text");
     if (!el || !S.stream) return false;
+    const feed = document.getElementById("tisch-feed");
+    const unten = feed && feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
     el.textContent = S.stream.text;
+    if (unten) feed.scrollTop = feed.scrollHeight;
     return true;
   }
 
@@ -335,6 +343,67 @@
     else if (p.gegen.art === "npc") gegen = `${p.gegen.name} (${p.gegen.wert} Würfel)`;
     else gegen = `Gegner-Pool ${p.gegen.wert}`;
     return { pool: `${p.bezeichnung} = ${p.pool} Würfel`, gegen: `gegen ${gegen} · Regelwerk ${p.seite || "S. 50"}` };
+  }
+
+  // ---------- Chronik
+
+  const CHRONIK_TYPEN = ["sitzung_start", "sitzung_ende", "runde", "sl", "erzaehlung", "probe", "npc_angriff", "plotpunkt", "plotpunkt_belohnung", "einspruch_ergebnis", "freie_rede"];
+
+  function chronikEintrag(e, neu) {
+    const d = e.daten || {};
+    switch (e.typ) {
+      case "sitzung_start": return h("div", { class: "ch-sys" }, `Sitzung ${d.nr} · ${new Date(e.zeit).toLocaleDateString("de-DE")}`);
+      case "sitzung_ende": return h("div", { class: "ch-sys" }, `Sitzung ${d.nr} beendet`);
+      case "runde": return h("div", { class: "ch-sys" }, `— Runde ${d.runde} —`);
+      case "sl": return h("p", { class: "ch-sl" + (neu ? " neu" : "") }, d.text);
+      case "erzaehlung": return h("p", { class: "ch-erz" }, h("b", null, nameVon(d) + ": "), d.korrigiert || d.text);
+      case "probe": {
+        const erg = d.art === "verteidigung" ? (d.vergleich.getroffen ? `getroffen, ${d.vergleich.netto} netto` : "abgewehrt") : (d.vergleich.gelungen ? `gelungen, ${d.vergleich.netto} netto` : "misslungen");
+        return h("p", { class: "ch-probe" }, `${nameVon(d)} · ${d.bezeichnung}: ${d.eigen.erfolge} gegen ${d.gegner.erfolge}, ${erg}${(d.folgen || []).length ? ". " + d.folgen.join(". ") : ""}`);
+      }
+      case "npc_angriff": return h("p", { class: "ch-probe" }, `${d.name} greift ${spieler(d.ziel) ? scName(spieler(d.ziel)) : (d.zielName || "Unbekannt")} an`);
+      case "plotpunkt": return h("p", { class: "ch-probe" }, `${nameVon(d)} setzt Plotpunkt ein: ${(Z().effekte || {})[d.effekt] || d.effekt}`);
+      case "plotpunkt_belohnung": return h("p", { class: "ch-probe" }, `Plotpunkt für ${nameVon(d)}: ${d.grund}`);
+      case "einspruch_ergebnis": return h("p", { class: "ch-probe", style: "color:var(--amber);border-color:var(--amber)" }, `Einspruch ${d.angenommen ? "angenommen" : "abgelehnt"}: ${d.begruendung}`);
+      case "freie_rede": return h("div", { class: "ch-sys" }, d.an ? "Freie Rede" : "Freie Rede beendet");
+      default: return null;
+    }
+  }
+
+  /** Verlauf mit dem laufenden SL-Text am Ende; die letzte SL-Antwort ist hervorgehoben */
+  function renderChronik(anzahl) {
+    const liste = S.verlauf.filter((e) => CHRONIK_TYPEN.includes(e.typ)).slice(-anzahl);
+    const letzteSL = [...liste].reverse().find((e) => e.typ === "sl");
+    const box = h("div", { class: "chronik" }, liste.map((e) => chronikEintrag(e, !S.stream && e === letzteSL)));
+    if (S.stream && !S.verlauf.some((e) => e.typ === "sl" && e.daten.id === S.stream.id)) {
+      box.appendChild(h("p", { class: "ch-sl neu", id: "sl-text" }, S.stream.text));
+    }
+    if (!liste.length && !S.stream) box.appendChild(h("p", { class: "leise" }, "Noch nichts passiert."));
+    return box;
+  }
+
+  async function chronikLaden() {
+    const r = await fetch(SERVER + "/api/chronik", { headers: { Authorization: "Bearer " + S.token } });
+    if (!r.ok) throw new Error("Chronik konnte nicht geladen werden");
+    return r.text();
+  }
+
+  function renderChronikReiter(rumpf) {
+    rumpf.appendChild(h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
+      h("button", { class: "knopf cyan", onclick: async () => {
+        try {
+          const text = await chronikLaden();
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
+          a.download = `chronik-${(Z().szene.run || "run").toLowerCase().replace(/[^a-z0-9äöüß]+/g, "-")}.md`;
+          document.body.appendChild(a); a.click(); a.remove();
+        } catch (e) { meldung(e.message); }
+      } }, "Als Datei speichern"),
+      h("button", { class: "knopf", onclick: async () => {
+        try { await navigator.clipboard.writeText(await chronikLaden()); meldung("Chronik kopiert", true); } catch (e) { meldung("Kopieren nicht möglich"); }
+      } }, "Kopieren")));
+    rumpf.appendChild(h("p", { class: "leise", style: "font-size:.85rem" }, "Öffentlicher Verlauf des Runs als Markdown, ohne private Nachrichten. Als Referenz für eure Gruppe, für Bildprompts und für spätere Runs."));
+    rumpf.appendChild(h("section", { class: "glas karte" }, renderChronik(400)));
   }
 
   // ---------- Einspruch und Abstimmung
@@ -439,10 +508,9 @@
     if (S.lobbyOffen || !sz.aktiv) {
       haupt.appendChild(renderLobbyKarte(true));
     } else {
-      haupt.appendChild(h("section", { class: "glas ecken tisch-sl" },
-        h("p", { class: "etikett", style: "margin-bottom:12px" }, S.stream ? "Spielleitung ▸ live" : (z.slDenkt ? "Spielleitung ▸ denkt nach …" : "Spielleitung")),
-        h("p", { class: "text", id: "sl-text" }, sl.aktuell || "Die Sitzung läuft. Wer am Zug ist, erzählt."),
-        sl.vorher ? h("p", { class: "vorher" }, sl.vorher) : null));
+      haupt.appendChild(h("section", { class: "glas tisch-sl", id: "tisch-feed" },
+        h("p", { class: "etikett", style: "margin-bottom:12px" }, S.stream ? "Chronik ▸ Spielleitung live" : (z.slDenkt ? "Chronik ▸ Spielleitung denkt nach …" : "Chronik")),
+        renderChronik(80)));
     }
     if (z.offeneProbe) {
       const p = z.offeneProbe;
@@ -519,9 +587,10 @@
     if (S.reiter === "bogen") renderBogen(rumpf);
     if (S.reiter === "nachrichten") renderNachrichten(rumpf);
     if (S.reiter === "lobby") rumpf.appendChild(renderLobbyKarte(false));
+    if (S.reiter === "chronik") renderChronikReiter(rumpf);
 
     const neu = privateNachrichten().filter((e) => e.nr > S.gelesen).length;
-    const reiter = [["sprechen", "Sprechen"], ["bogen", "Bogen"], ["nachrichten", "Nachrichten"], ["lobby", "Lobby"]];
+    const reiter = [["sprechen", "Sprechen"], ["chronik", "Chronik"], ["bogen", "Bogen"], ["nachrichten", "Privat"], ["lobby", "Lobby"]];
     const nav = h("nav", { class: "handy-nav", role: "tablist" }, reiter.map(([k, t]) => h("button", {
       role: "tab", "aria-selected": String(S.reiter === k),
       onclick: () => { S.reiter = k; merke("sr-reiter", k); if (k === "nachrichten") markiereGelesen(); render(); },

@@ -347,7 +347,7 @@
 
   // ---------- Chronik
 
-  const CHRONIK_TYPEN = ["sitzung_start", "sitzung_ende", "runde", "sl", "erzaehlung", "probe", "npc_angriff", "plotpunkt", "plotpunkt_belohnung", "einspruch_ergebnis", "freie_rede"];
+  const CHRONIK_TYPEN = ["sitzung_start", "sitzung_ende", "runde", "sl", "erzaehlung", "probe", "npc_angriff", "plotpunkt", "plotpunkt_belohnung", "einspruch_ergebnis", "freie_rede", "sl_hinweis"];
 
   function chronikEintrag(e, neu) {
     const d = e.daten || {};
@@ -366,6 +366,7 @@
       case "plotpunkt_belohnung": return h("p", { class: "ch-probe" }, `Plotpunkt für ${nameVon(d)}: ${d.grund}`);
       case "einspruch_ergebnis": return h("p", { class: "ch-probe", style: "color:var(--amber);border-color:var(--amber)" }, `Einspruch ${d.angenommen ? "angenommen" : "abgelehnt"}: ${d.begruendung}`);
       case "freie_rede": return h("div", { class: "ch-sys" }, d.an ? "Freie Rede" : "Freie Rede beendet");
+      case "sl_hinweis": return h("p", { class: "ch-probe", style: "color:var(--amber);border-color:var(--amber)" }, `Rückmeldung ${d.quelle === "ki" ? "der SL" : "des Systems"} (Playtest): ${d.text}`);
       default: return null;
     }
   }

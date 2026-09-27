@@ -97,11 +97,30 @@
       for (const sp of daten.spieler) ov.appendChild(el("option", { value: sp.id }, sp.name));
       ov.value = daten.einstellungen.overrideSpieler || "";
     }
+    $("playtest").checked = daten.einstellungen.playtestHinweise !== false;
+    $("hinweis-zahl").textContent = daten.offeneHinweise ? `(${daten.offeneHinweise} offen)` : "";
+    ladeHinweise();
     $("tisch-status").textContent = daten.tisch.hatCode ? (daten.tisch.online ? "Tischgerät ist verbunden." : "Tisch-Code vorhanden, Gerät nicht verbunden.") : "Noch kein Tisch-Code.";
     $("tisch-code").textContent = daten.tisch.hatCode ? "Neuen Tisch-Code erzeugen" : "Tisch-Code erzeugen";
     for (const k of ["ort", "zeit", "run", "szene"]) if (document.activeElement !== $("sz-" + k)) $("sz-" + k).value = daten.szene[k] || "";
     $("sitzung").textContent = daten.sitzung.aktiv ? `Sitzung ${daten.sitzung.nr} läuft.` : `Keine laufende Sitzung (bisher ${daten.sitzung.nr}).`;
     $("pp-reset").checked = !!daten.einstellungen.plotpunkteJeSitzungZuruecksetzen;
+  }
+
+  async function ladeHinweise() {
+    const { daten } = await api("GET", "/admin/hinweise");
+    const liste = $("hinweise");
+    liste.textContent = "";
+    if (!daten.hinweise.length) { liste.appendChild(el("li", null, el("span", { class: "leise" }, "Keine Rückmeldungen."))); return; }
+    for (const x of daten.hinweise) {
+      const zeit = new Date(x.zeit).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
+      const box = el("input", { type: "checkbox", "aria-label": "erledigt" });
+      box.checked = !!x.erledigt;
+      box.addEventListener("change", async () => { await api("PUT", `/admin/hinweise/${x.id}`, { erledigt: box.checked }); });
+      liste.appendChild(el("li", { style: x.erledigt ? "opacity:.5" : "" }, box,
+        el("span", { class: "name" }, `${x.text}`),
+        el("span", { class: "leise klein" }, `${x.quelle === "ki" ? "SL" : "System"} · Sitzung ${x.sitzung}, Runde ${x.runde} · ${zeit}`)));
+    }
   }
 
   async function code(s) {
@@ -185,6 +204,16 @@
     $("code").textContent = daten.code;
     $("code-box").hidden = false;
     $("code-box").scrollIntoView({ behavior: "smooth" });
+    lade();
+  });
+  $("playtest").addEventListener("change", async (e) => {
+    await api("PUT", "/admin/einstellungen", { playtestHinweise: e.target.checked });
+    meldung("Gespeichert", true);
+  });
+  $("hinweise-laden").addEventListener("click", () => lade());
+  $("hinweise-loeschen").addEventListener("click", async () => {
+    if (!confirm("Alle als erledigt markierten Rückmeldungen löschen?")) return;
+    await api("DELETE", "/admin/hinweise/erledigte");
     lade();
   });
   $("override").addEventListener("change", async (e) => {

@@ -9,9 +9,37 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1b2d">
+<link rel="stylesheet" href="style.css?v=matrix1">
 </head>
 <body>
+<div class="matrix-bg" aria-hidden="true">
+  <svg class="matrix-bg__network" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="matrix-cyan" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3de8ff" stop-opacity=".65"/><stop offset="1" stop-color="#3de8ff" stop-opacity=".08"/></linearGradient>
+      <linearGradient id="matrix-pink" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#ff2e88" stop-opacity=".46"/><stop offset="1" stop-color="#ff2e88" stop-opacity=".05"/></linearGradient>
+    </defs>
+    <g class="matrix-bg__drift" fill="none" stroke="url(#matrix-cyan)" stroke-width="1">
+      <path d="M-30 92H92l66 64h96l50 49h102M0 220h112l58 58h92l65 67h88M-40 422h120l83-83h83l73 75h90M-30 622H95l87-78h82l55-55h90M-30 779h105l58-59h98l86-83h90M27-25v82l58 58v98M207-25v98l66 65v90M-20 318h52l53 52v110M89 900v-85l71-68v-81"/>
+      <path d="M1470 62h-124l-66 67h-105l-59 55h-80m444 52h-123l-67 68h-91l-70 69h-79m425 72h-120l-69-66h-82l-71-66h-82m419 276h-126l-60-60h-105l-55-56h-83m426 303h-107l-73-70h-92l-66-65h-100m420 145h-112l-52-50h-113l-56-54h-80m378-737v78l-68 67v68m-82-203v92l-70 67v76m250 92h-58l-48 47v89m94 477v-97l-70-71v-70"/>
+    </g>
+    <g fill="none" stroke="url(#matrix-pink)" stroke-width="1.25">
+      <path d="M-20 306h95l65-65h101l59 59h65M42 900v-47l92-90h87l85-85h94M1460 157h-101l-91 89h-76l-50 51h-67M1460 556h-91l-71-69h-102l-49-50h-95M1395 900v-62l-87-83h-76l-77-76h-89"/>
+    </g>
+    <g class="matrix-bg__faint" fill="none" stroke="#3de8ff" stroke-opacity=".21" stroke-width=".7">
+      <path d="M-20 146h70l74 73h114m-255 331h87l82-79h117m-290 246h70l68-69h119m-180 252v-56l53-54m230-790v91l55 53m1060-93h-69l-65 65h-100m262 497h-97l-62-61h-94m278 275h-80l-75-74h-94m255-598v77l-66 65m-67 541v-90l-64-64"/>
+      <path d="M45 146v-53h84m39 393v-58h79m-27 472v-67h78m107-720h-69l-46 46m1097-33h-99l-48 48m171 426h-78l-48 47m-76 236h-76l-52-52"/>
+    </g>
+    <g class="matrix-bg__nodes" fill="#3de8ff">
+      <circle cx="158" cy="156" r="3"/><circle cx="262" cy="278" r="2.5"/><circle cx="163" cy="339" r="3"/><circle cx="182" cy="544" r="2.5"/><circle cx="133" cy="720" r="3"/><circle cx="304" cy="205" r="2"/><circle cx="1280" cy="129" r="3"/><circle cx="1290" cy="304" r="2.5"/><circle cx="1286" cy="379" r="3"/><circle cx="1384" cy="561" r="2"/><circle cx="1308" cy="755" r="3"/><circle cx="1175" cy="129" r="2"/>
+    </g>
+    <g class="matrix-bg__nodes matrix-bg__nodes--pink" fill="#ff2e88">
+      <circle cx="140" cy="241" r="3"/><circle cx="134" cy="763" r="2.5"/><circle cx="1268" cy="246" r="3"/><circle cx="1298" cy="487" r="2.5"/><circle cx="1308" cy="755" r="3"/>
+    </g>
+    <g class="matrix-bg__signal" fill="none" stroke="#9ff4ff" stroke-width="1.5">
+      <path d="M-20 422h100l83-83h83M1460 556h-91l-71-69h-102"/>
+    </g>
+  </svg>
+</div>
 <div id="app"></div>
 <div id="dialog"></div>
 <div class="meldung" id="meldung" role="alert" hidden></div>

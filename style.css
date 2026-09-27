@@ -21,6 +21,8 @@
   --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
   --text-schrift: "Barlow", "Segoe UI", system-ui, sans-serif;
   --mono: "Share Tech Mono", ui-monospace, Menlo, Consolas, monospace;
+  --matrix-opacity: 0.56;
+  --matrix-speed: 28s;
   color-scheme: dark;
   box-sizing: border-box;
   padding-top: env(safe-area-inset-top, 0px);
@@ -35,11 +37,42 @@ body {
   font: 400 1rem/1.5 var(--text-schrift);
   background-color: var(--grund);
   background-image:
-    linear-gradient(rgba(61, 232, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(61, 232, 255, 0.045) 1px, transparent 1px);
-  background-size: 28px 28px;
+    radial-gradient(ellipse at center, #0a111b 0%, #070b10 72%);
   -webkit-tap-highlight-color: transparent;
 }
+/* Dekorative Matrixebene: kein JavaScript, keine Eingabe- oder Scroll-Ereignisse. */
+.matrix-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: var(--matrix-opacity);
+  background:
+    radial-gradient(ellipse at 5% 25%, rgba(21, 98, 123, .16), transparent 45%),
+    radial-gradient(ellipse at 96% 73%, rgba(105, 20, 69, .12), transparent 42%),
+    linear-gradient(rgba(61, 232, 255, .025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(61, 232, 255, .025) 1px, transparent 1px);
+  background-size: auto, auto, 32px 32px, 32px 32px;
+}
+.matrix-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(7, 11, 16, .88) 0%, rgba(7, 11, 16, .55) 38%, transparent 80%);
+}
+.matrix-bg__network { width: 100%; height: 100%; display: block; }
+.matrix-bg__drift { animation: matrix-drift var(--matrix-speed) ease-in-out infinite alternate; }
+.matrix-bg__nodes { animation: matrix-pulse 9s ease-in-out infinite alternate; }
+.matrix-bg__nodes--pink { animation-duration: 13s; animation-delay: -5s; }
+.matrix-bg__faint { opacity: .6; }
+.matrix-bg__signal { opacity: 0; animation: matrix-signal 29s linear infinite; }
+@keyframes matrix-drift { to { transform: translate(9px, -7px); } }
+@keyframes matrix-pulse { from { opacity: .26; } to { opacity: .86; } }
+@keyframes matrix-signal { 0%, 81%, 83%, 100% { opacity: 0; } 81.5%, 82% { opacity: .45; } }
+/* Zum direkten Vergleich kann data-matrix="off" auf html gesetzt werden. */
+html[data-matrix="off"] .matrix-bg { display: none; }
+#app { position: relative; z-index: 1; }
 p { margin: 0; }
 button, select, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -216,8 +249,13 @@ label.feld { display: block; font-family: var(--mono); font-size: 0.78rem; lette
   .tisch-sl { max-height: 60vh; }
   .tisch-rumpf { grid-template-columns: minmax(0, 1fr); }
 }
+@media (max-width: 600px) {
+  .matrix-bg { --matrix-opacity: .38; }
+  .matrix-bg__faint { display: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .mitschrift .balken span { animation: none; }
+  .matrix-bg__drift, .matrix-bg__nodes, .matrix-bg__signal { animation: none; }
 }
 
 /* Chronik: fortlaufender Verlauf auf Tisch und Handy */
